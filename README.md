@@ -3,7 +3,7 @@
 **Bivariate choropleth mapping for QGIS — 30 palettes, vector & raster classification, interactive Leaflet export, and native Print Layout legend items.**
 
 [![QGIS](https://img.shields.io/badge/QGIS-3.16%2B-green?style=flat&logo=qgis&logoColor=white)](https://qgis.org)
-[![Download ZIP](https://img.shields.io/badge/Download-ZIP-blue?style=flat&logo=github)](https://github.com/hemedlungo/bivariate-qgis-plugin/releases/latest/download/bivariate_qgis_plugin.zip)
+[![Download ZIP](https://img.shields.io/badge/Download-ZIP-blue?style=flat&logo=github)](https://github.com/hemedlungo/bivariate-plugin/releases/latest/download/bivariate_qgis_plugin.zip)
 [![Version](https://img.shields.io/badge/version-0.0.1-orange?style=flat)](https://github.com/hemedlungo/bivariate-qgis-plugin)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 
