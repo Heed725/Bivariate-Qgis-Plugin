@@ -1,0 +1,18 @@
+[general]
+name=Bivariate QGIS Plugin
+qgisMinimumVersion=3.16
+description=Ultimate bivariate mapping suite — 30 palettes, vector & raster classification, QML styling, diamond & square legend generators, and styled Leaflet web export.
+version=0.0.1
+author=Hemed Lungo
+email=your@email.com
+about=Provides Processing tools for bivariate choropleth mapping plus two custom Print Layout items (Bivariate Box Legend and Bivariate Diamond Legend) accessible from the Layout Add Item menu.
+
+tracker=https://github.com/Heed725/Bivariate-Qgis-Plugin/issues
+repository=https://github.com/Heed725/Bivariate-Qgis-Plugin
+homepage=https://github.com/Heed725/Bivariate-Qgis-Plugin
+tags=bivariate,choropleth,cartography,mapping,leaflet,raster,vector,style,legend,diamond
+category=Analysis
+icon=icon.png
+experimental=False
+deprecated=False
+hasProcessingProvider=yes
