@@ -113,6 +113,7 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._label_b     = 'Variable B'
         self._show_labels = False
         self._show_codes  = False
+        self._fit_to_item = True
         self._outline_hex = '#4a4a4a'
         self._outline_w   = 0.3
         self._transposed  = False   # X/Y axis swap toggle
@@ -132,6 +133,7 @@ class _BivariateBaseItem(QgsLayoutItem):
         el.setAttribute('labelB',     self._label_b)
         el.setAttribute('showLabels', str(int(self._show_labels)))
         el.setAttribute('showCodes',  str(int(self._show_codes)))
+        el.setAttribute('fitToItem',  str(int(self._fit_to_item)))
         el.setAttribute('outlineHex', self._outline_hex)
         el.setAttribute('outlineW',   str(self._outline_w))
         el.setAttribute('transposed', str(int(self._transposed)))
@@ -147,6 +149,7 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._label_b     = el.attribute('labelB',     'Variable B')
         self._show_labels = bool(int(el.attribute('showLabels', '1')))
         self._show_codes  = bool(int(el.attribute('showCodes',  '0')))
+        self._fit_to_item = bool(int(el.attribute('fitToItem',  '1')))
         self._outline_hex = el.attribute('outlineHex', '#4a4a4a')
         self._outline_w   = float(el.attribute('outlineW',   '0.3'))
         self._transposed  = bool(int(el.attribute('transposed', '0')))
@@ -185,20 +188,35 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
         painter.setRenderHint(QPainter.Antialiasing)
 
         scale = ctx.renderContext().scaleFactor()   # px per mm
-        cs    = self._cell_size * scale
+        iw    = self.rect().width() * scale
+        ih    = self.rect().height() * scale
         gap   = self._gap * scale
-        step  = cs + gap
+        dim   = self._dim
 
-        ml = cs * 0.9 if self._show_labels else gap
-        mb = cs * 0.9 if self._show_labels else gap
+        # Fit the palette to the freely resizable layout item. Reserve bands
+        # for axis titles first so the complete legend remains centred.
+        if self._fit_to_item:
+            label_cells = 0.72 if self._show_labels else 0.0
+            cs = max(
+                1.0,
+                (min(iw, ih) - (dim - 1) * gap) / (dim + label_cells))
+        else:
+            cs = self._cell_size * scale
+
+        step = cs + gap
+        grid_w = dim * cs + (dim - 1) * gap
+        grid_h = grid_w
+        label_space = cs * 0.72 if self._show_labels else 0.0
+        ml = max(0.0, (iw - grid_w - label_space) / 2.0) + label_space
+        mb = max(0.0, (ih - grid_h - label_space) / 2.0)
 
         pen    = self._pen()
         colors = self._colors()
 
-        af = QFont(); af.setPointSizeF(max(5, self._cell_size * 0.28))
-        cf = QFont(); cf.setPointSizeF(max(4, self._cell_size * 0.22)); cf.setBold(True)
+        rendered_cell_mm = cs / scale
+        af = QFont(); af.setPointSizeF(max(5, rendered_cell_mm * 0.28))
+        cf = QFont(); cf.setPointSizeF(max(4, rendered_cell_mm * 0.22)); cf.setBold(True)
 
-        dim = self._dim
         codes = class_codes(dim, vector=False)
         for row in range(dim):
             for col in range(dim):
@@ -221,8 +239,6 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
         if self._show_labels:
             painter.setFont(af)
             painter.setPen(QPen(QColor('#555555')))
-            grid_w = dim*cs + (dim-1)*gap
-            grid_h = dim*cs + (dim-1)*gap
             # When transposed, the axes are swapped: what was Variable A
             # (X-axis) is now Variable B (Y-axis) and vice versa.
             x_label = self._label_b if self._transposed else self._label_a
@@ -386,6 +402,11 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         self._gap_spin = QDoubleSpinBox()
         self._gap_spin.setRange(0, 20); self._gap_spin.setSingleStep(0.5)
         f2.addRow('Gap:', self._gap_spin)
+        self._fit_chk = QCheckBox('Fit and center grid inside item')
+        self._fit_chk.setToolTip(
+            'Resize square cells automatically with the layout item.\n'
+            'Turn this off to use the fixed Cell size value.')
+        f2.addRow('', self._fit_chk)
         root.addWidget(g2)
 
         g3 = QGroupBox('Labels'); f3 = QFormLayout(g3)
@@ -411,6 +432,7 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         self._transpose_chk.toggled.connect(self._apply)
         self._cell_spin.valueChanged.connect(self._apply)
         self._gap_spin.valueChanged.connect(self._apply)
+        self._fit_chk.toggled.connect(self._apply)
         self._la.editingFinished.connect(self._apply)
         self._lb.editingFinished.connect(self._apply)
         self._show_lbl_chk.toggled.connect(self._apply)
@@ -427,6 +449,7 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         self._transpose_chk.setChecked(it._transposed)
         self._cell_spin.setValue(it._cell_size)
         self._gap_spin.setValue(it._gap)
+        self._fit_chk.setChecked(it._fit_to_item)
         self._la.setText(it._label_a); self._lb.setText(it._label_b)
         self._show_lbl_chk.setChecked(it._show_labels)
         self._show_cod_chk.setChecked(it._show_codes)
@@ -456,6 +479,7 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         it._transposed  = self._transpose_chk.isChecked()
         it._cell_size   = self._cell_spin.value()
         it._gap         = self._gap_spin.value()
+        it._fit_to_item = self._fit_chk.isChecked()
         it._label_a     = self._la.text()
         it._label_b     = self._lb.text()
         it._show_labels = self._show_lbl_chk.isChecked()

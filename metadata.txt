@@ -27,6 +27,8 @@ changelog=0.0.4
     - Preserved the 0.0.3 transpose option for every supported grid size.
     - Credited Spiros Staridas for the Staridas Geography palette builder and
       its export formats used by the integration workflow.
+    - Print Layout box legends now fit and centre the palette grid when their
+      item is resized, avoiding unused space while preserving square cells.
   0.0.3
     - All Processing tools now show (Raster) or (Vector) suffixes in their
       display names so users can tell at a glance which input data type each

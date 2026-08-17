@@ -181,6 +181,7 @@ Use the **Item Properties** panel after placing an item on the canvas:
 | Custom colors | 9 comma-separated hex codes (order: 11–33) |
 | Cell size | Size of each cell in mm |
 | Gap | Spacing between cells in mm |
+| Fit and center grid | Automatically scales and centres the box grid inside its layout item |
 | Variable A / B labels | Axis label text |
 | Show axis labels | Toggle axis arrows and labels (box only) |
 | Show class codes | Overlay class codes (A1…C3) on each cell |
@@ -188,6 +189,10 @@ Use the **Item Properties** panel after placing an item on the canvas:
 | Outline width | Border width in mm |
 
 All property changes preview live on the layout canvas. Settings are saved with the QGIS project (`.qgs` / `.qpt`).
+
+The Box Legend fits its square grid when the layout item is resized, matching
+the compact palette presentation of the Staridas builder. Disable **Fit and
+center grid inside item** to use an exact fixed cell size instead.
 
 ---
 
