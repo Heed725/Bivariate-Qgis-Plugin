@@ -283,8 +283,29 @@ The exported Leaflet map loads tile layers and the Leaflet JS library from a CDN
 
 ---
 
+## Staridas Palette Builder Integration
+
+The plugin accepts palette output from the
+[Staridas Geography Bivariate Color Palette Builder](https://www.staridasgeography.gr/blog/bivariate-color-palette/builder/).
+
+1. Select 3×3, 4×4, or 5×5 in the website and design the palette.
+2. Copy its labelled **HEX**, **CSS**, or **JSON** output.
+3. In the relevant plugin tool choose the matching grid size.
+4. Select **Custom / Staridas import**, paste the output, and run.
+
+Recognized examples include `A1 #FAEEC6`, `--clr-A1: #FAEEC6;`, and
+`"A1": "#FAEEC6"`. Labels are used to put colors in the correct order even
+when entries are shuffled. The importer reports missing, duplicate, or
+unexpected classes. It expects A1–C3 for 3×3, A1–D4 for 4×4, and A1–E5 for 5×5.
+
+Built-in palettes are interpolated from 3×3 when a larger grid is chosen. The
+transpose option introduced in 0.0.3 remains available for every grid size.
+
+---
+
 ## Credits
 
+- **Spiros Staridas** — creator of the [Staridas Geography Bivariate Color Palette Builder](https://www.staridasgeography.gr/blog/bivariate-color-palette/builder/), whose labelled HEX, CSS, and JSON export formats are supported by this plugin.
 - Bivariate methodology: [Joshua Stevens](https://www.joshuastevens.net/cartography/make-a-bivariate-choropleth-map/)
 - Web export inspired by [qgis2web](https://github.com/tomchadwin/qgis2web)
 - Print Layout item pattern adapted from [DataPlotly](https://github.com/ghtmtt/DataPlotly)
@@ -298,4 +319,4 @@ GNU General Public License v2.0 or later.
 
 ---
 
-*Bivariate QGIS Plugin · v0.0.1 · Hemed Lungo*
+*Bivariate QGIS Plugin · v0.0.4 · Hemed Lungo*

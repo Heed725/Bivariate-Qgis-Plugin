@@ -18,7 +18,7 @@ _dir = os.path.dirname(os.path.abspath(__file__))
 if _dir not in sys.path:
     sys.path.insert(0, _dir)
 
-from .palettes import PALETTES, CODE_LABELS
+from .palettes import PALETTES, class_codes, palette_colors, transpose_palette
 
 from qgis.PyQt.QtCore    import Qt, QRectF, QPointF, QCoreApplication
 from qgis.PyQt.QtGui     import (QPainter, QColor, QFont, QPen, QBrush,
@@ -47,8 +47,7 @@ PLUGIN_BASE  = QgsLayoutItemRegistry.PluginItem
 TYPE_BOX     = PLUGIN_BASE + 1338
 TYPE_DIAMOND = PLUGIN_BASE + 1339
 
-PALETTE_NAMES = list(PALETTES.keys()) + ['Custom']
-CODES_ORDER   = ['11','12','13','21','22','23','31','32','33']
+PALETTE_NAMES = list(PALETTES.keys()) + ['Custom / Staridas import']
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,11 +60,12 @@ def _text_color(hex_c):
     return QColor('#111111') if (r*299+g*587+b*114)/1000 > 155 else QColor('#f5f5f5')
 
 
-def _resolve_colors(pal_idx, custom_str):
-    if pal_idx >= len(PALETTES):
-        parts = [c.strip() for c in custom_str.split(',')]
-        return parts if len(parts) == 9 else ['#cccccc'] * 9
-    return list(PALETTES.values())[pal_idx]
+def _resolve_colors(pal_idx, custom_str, dim=3):
+    name = PALETTE_NAMES[pal_idx] if pal_idx < len(PALETTE_NAMES) else PALETTE_NAMES[-1]
+    try:
+        return palette_colors(name, dim, custom_str)
+    except ValueError:
+        return ['#cccccc'] * (dim * dim)
 
 
 def _make_icon(colors, diamond=False, size=24):
@@ -106,6 +106,7 @@ class _BivariateBaseItem(QgsLayoutItem):
         self.setCacheMode(QGraphicsItem.NoCache)
         self._pal_idx     = 6
         self._custom      = ''
+        self._dim         = 3
         self._cell_size   = 18.0
         self._gap         = 1.5
         self._label_a     = 'Variable A'
@@ -114,6 +115,7 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._show_codes  = False
         self._outline_hex = '#4a4a4a'
         self._outline_w   = 0.3
+        self._transposed  = False   # X/Y axis swap toggle
         try:
             self.attemptResize(
                 QgsLayoutSize(80, 80, QgsUnitTypes.LayoutMillimeters))
@@ -123,6 +125,7 @@ class _BivariateBaseItem(QgsLayoutItem):
     def writePropertiesToElement(self, el, doc, ctx):
         el.setAttribute('palIdx',     str(self._pal_idx))
         el.setAttribute('custom',     self._custom)
+        el.setAttribute('dimension',  str(self._dim))
         el.setAttribute('cellSize',   str(self._cell_size))
         el.setAttribute('gap',        str(self._gap))
         el.setAttribute('labelA',     self._label_a)
@@ -131,11 +134,13 @@ class _BivariateBaseItem(QgsLayoutItem):
         el.setAttribute('showCodes',  str(int(self._show_codes)))
         el.setAttribute('outlineHex', self._outline_hex)
         el.setAttribute('outlineW',   str(self._outline_w))
+        el.setAttribute('transposed', str(int(self._transposed)))
         return True
 
     def readPropertiesFromElement(self, el, doc, ctx):
         self._pal_idx     = int(el.attribute('palIdx',     '6'))
         self._custom      = el.attribute('custom',     '')
+        self._dim         = int(el.attribute('dimension', '3'))
         self._cell_size   = float(el.attribute('cellSize',   '18'))
         self._gap         = float(el.attribute('gap',        '1.5'))
         self._label_a     = el.attribute('labelA',     'Variable A')
@@ -144,10 +149,14 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._show_codes  = bool(int(el.attribute('showCodes',  '0')))
         self._outline_hex = el.attribute('outlineHex', '#4a4a4a')
         self._outline_w   = float(el.attribute('outlineW',   '0.3'))
+        self._transposed  = bool(int(el.attribute('transposed', '0')))
         return True
 
     def _colors(self):
-        return _resolve_colors(self._pal_idx, self._custom)
+        cols = _resolve_colors(self._pal_idx, self._custom, self._dim)
+        if self._transposed:
+            cols = transpose_palette(cols, self._dim)
+        return cols
 
     def _pen(self):
         pen = QPen(QColor(self._outline_hex))
@@ -189,12 +198,14 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
         af = QFont(); af.setPointSizeF(max(5, self._cell_size * 0.28))
         cf = QFont(); cf.setPointSizeF(max(4, self._cell_size * 0.22)); cf.setBold(True)
 
-        for row in range(3):        # row 0 = top = High B
-            for col in range(3):    # col 0 = left = Low A
-                b_val = 2 - row
+        dim = self._dim
+        codes = class_codes(dim, vector=False)
+        for row in range(dim):
+            for col in range(dim):
+                b_val = dim - 1 - row
                 a_val = col
                 code  = f'{a_val+1}{b_val+1}'
-                idx   = CODES_ORDER.index(code)
+                idx   = codes.index(code)
                 color = QColor(colors[idx])
                 x = ml + col * step
                 y = mb + row * step
@@ -210,16 +221,20 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
         if self._show_labels:
             painter.setFont(af)
             painter.setPen(QPen(QColor('#555555')))
-            grid_w = 3*cs + 2*gap
-            grid_h = 3*cs + 2*gap
+            grid_w = dim*cs + (dim-1)*gap
+            grid_h = dim*cs + (dim-1)*gap
+            # When transposed, the axes are swapped: what was Variable A
+            # (X-axis) is now Variable B (Y-axis) and vice versa.
+            x_label = self._label_b if self._transposed else self._label_a
+            y_label = self._label_a if self._transposed else self._label_b
             painter.drawText(
                 QRectF(ml, mb + grid_h + gap*0.5, grid_w, cs*0.8),
-                Qt.AlignCenter, f'{self._label_a}  →')
+                Qt.AlignCenter, f'{x_label}  →')
             painter.save()
             painter.translate(ml - gap*0.5, mb + grid_h/2)
             painter.rotate(-90)
             painter.drawText(QRectF(-grid_h/2, -cs*0.8, grid_h, cs*0.8),
-                             Qt.AlignCenter, f'↑  {self._label_b}')
+                             Qt.AlignCenter, f'↑  {y_label}')
             painter.restore()
 
         painter.restore()
@@ -265,7 +280,8 @@ class BivariateDiamondLegendItem(_BivariateBaseItem):
             return x, y
 
         # ── Bounding box of the 9 diamond shapes ──────────────────────────
-        pts   = [raw(r, c) for r in range(3) for c in range(3)]
+        dim = self._dim
+        pts   = [raw(r, c) for r in range(dim) for c in range(dim)]
         min_x = min(p[0] for p in pts) - half
         max_x = max(p[0] for p in pts) + half
         min_y = min(p[1] for p in pts) - half
@@ -288,10 +304,11 @@ class BivariateDiamondLegendItem(_BivariateBaseItem):
         cf = QFont(); cf.setPointSizeF(max(4, self._cell_size * 0.22)); cf.setBold(True)
         af = QFont(); af.setPointSizeF(max(5, self._cell_size * 0.28))
 
-        for row in range(3):      # row 0 = Low B (bottom), row 2 = High B (top)
-            for col in range(3):  # col 0 = Low A (left),   col 2 = High A (right)
+        codes = class_codes(dim, vector=False)
+        for row in range(dim):
+            for col in range(dim):
                 code  = f'{col+1}{row+1}'
-                idx   = CODES_ORDER.index(code)
+                idx   = codes.index(code)
                 color = QColor(colors[idx])
                 cx, cy = centre(row, col)
 
@@ -345,9 +362,21 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         g1 = QGroupBox('Palette'); f1 = QFormLayout(g1)
         self._pal_combo = QComboBox(); self._pal_combo.addItems(PALETTE_NAMES)
         f1.addRow('Palette:', self._pal_combo)
+        self._dim_combo = QComboBox(); self._dim_combo.addItems(['3×3', '4×4', '5×5'])
+        f1.addRow('Grid size:', self._dim_combo)
         self._custom_edit = QLineEdit()
-        self._custom_edit.setPlaceholderText('#hex1,… 9 codes (order 11–33)')
+        self._custom_edit.setPlaceholderText('Paste Staridas labelled HEX, CSS, or JSON')
         f1.addRow('Custom colors:', self._custom_edit)
+        # Transpose tick: swaps the X and Y axes of the palette.
+        # Diagonal corners (low-low, high-high) stay put; the two off-diagonal
+        # corners reflect across the diagonal. Equivalent to swapping which
+        # variable each axis encodes.
+        self._transpose_chk = QCheckBox('Transpose axes (swap X ↔ Y)')
+        self._transpose_chk.setToolTip(
+            'Swap which variable is on the X axis vs the Y axis.\n'
+            'Diagonal corners (low-low, high-high) stay put;\n'
+            'the two off-diagonal corners reflect across the diagonal.')
+        f1.addRow('', self._transpose_chk)
         root.addWidget(g1)
 
         g2 = QGroupBox('Dimensions (mm)'); f2 = QFormLayout(g2)
@@ -377,7 +406,9 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         root.addStretch()
 
         self._pal_combo.currentIndexChanged.connect(self._apply)
+        self._dim_combo.currentIndexChanged.connect(self._apply)
         self._custom_edit.editingFinished.connect(self._apply)
+        self._transpose_chk.toggled.connect(self._apply)
         self._cell_spin.valueChanged.connect(self._apply)
         self._gap_spin.valueChanged.connect(self._apply)
         self._la.editingFinished.connect(self._apply)
@@ -391,7 +422,9 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         self._building = True
         it = self._item
         self._pal_combo.setCurrentIndex(it._pal_idx)
+        self._dim_combo.setCurrentIndex(it._dim - 3)
         self._custom_edit.setText(it._custom)
+        self._transpose_chk.setChecked(it._transposed)
         self._cell_spin.setValue(it._cell_size)
         self._gap_spin.setValue(it._gap)
         self._la.setText(it._label_a); self._lb.setText(it._label_b)
@@ -418,7 +451,9 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
             return
         it = self._item
         it._pal_idx     = self._pal_combo.currentIndex()
+        it._dim         = self._dim_combo.currentIndex() + 3
         it._custom      = self._custom_edit.text()
+        it._transposed  = self._transpose_chk.isChecked()
         it._cell_size   = self._cell_spin.value()
         it._gap         = self._gap_spin.value()
         it._label_a     = self._la.text()

@@ -71,7 +71,7 @@ class BivariateLegendBoxGenerator(QgsProcessingAlgorithm):
         return 'bivariate_legend_box_generator'
 
     def displayName(self):
-        return self.tr('Bivariate Legend Box Generator (3×3)')
+        return self.tr('Bivariate Legend Box Generator 3×3 (Vector)')
 
     def group(self):
         return self.tr('Cartography')

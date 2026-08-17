@@ -1,0 +1,47 @@
+name: Package and publish plugin 0.0.4
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Package QGIS plugin
+        shell: bash
+        run: |
+          mkdir -p package/bivariate_plugin
+          cp LICENSE README.md __init__.py apply_bivariate_colors.py \
+            bivariate_choropleth.py bivariate_export_leaflet.py \
+            bivariate_legend_box_generator.py bivariate_legend_diamond_generator.py \
+            bivariate_provider.py bivariate_raster_generator.py \
+            bivariate_style_generator.py icon.png layout_items.py metadata.txt \
+            palettes.py plugin_core.py package/bivariate_plugin/
+          cd package
+          zip -r ../bivariate_plugin-0.0.4.zip bivariate_plugin
+
+      - name: Validate package
+        shell: bash
+        run: |
+          unzip -t bivariate_plugin-0.0.4.zip
+          grep -q '^version=0.0.4$' metadata.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view 0.0.4 >/dev/null 2>&1; then
+            echo 'Release 0.0.4 already exists; no action needed.'
+          else
+            gh release create 0.0.4 bivariate_plugin-0.0.4.zip \
+              --title 'Bivariate QGIS Plugin 0.0.4' \
+              --notes 'Adds 3x3, 4x4 and 5x5 grids; Staridas labelled HEX, CSS and JSON palette import; built-in palette interpolation; and preserves transpose support. Credits Spiros Staridas for the Staridas Geography Bivariate Color Palette Builder.'
+          fi

@@ -57,7 +57,7 @@ class BivariateLegendDiamondGenerator(QgsProcessingAlgorithm):
         return BivariateLegendDiamondGenerator()
 
     def name(self):        return 'bivariate_legend_diamond_generator'
-    def displayName(self): return self.tr('Bivariate Legend Diamond Generator (3×3)')
+    def displayName(self): return self.tr('Bivariate Legend Diamond Generator 3×3 (Vector)')
     def group(self):       return self.tr('Cartography')
     def groupId(self):     return 'cartography'
 

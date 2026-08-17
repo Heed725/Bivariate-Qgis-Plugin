@@ -1,4 +1,4 @@
-# palettes.py — All 30 bivariate palettes
+# palettes.py — Built-in palettes plus dimension/import helpers
 # Format: palette_name -> list of 9 hex codes [11,12,13,21,22,23,31,32,33]
 
 PALETTES = {
@@ -38,3 +38,122 @@ CODE_LABELS = {
     "21": "Mid A, Low B",    "22": "Mid A, Mid B",    "23": "Mid A, High B",
     "31": "High A, Low B",   "32": "High A, Mid B",   "33": "High A, High B",
 }
+
+
+import json
+import re
+
+SUPPORTED_DIMS = (3, 4, 5)
+
+
+def class_codes(dim, vector=True):
+    if dim not in SUPPORTED_DIMS:
+        raise ValueError('Dimension must be 3, 4, or 5')
+    if vector:
+        return [f'{chr(65 + x)}{y + 1}' for x in range(dim) for y in range(dim)]
+    return [f'{x + 1}{y + 1}' for x in range(dim) for y in range(dim)]
+
+
+def code_label(code, dim):
+    levels = ['Low', 'Low-mid', 'Middle', 'Mid-high', 'High']
+    if code[0].isalpha():
+        x, y = ord(code[0].upper()) - 65, int(code[1:]) - 1
+    else:
+        x, y = int(code[0]) - 1, int(code[1:]) - 1
+    picks = [0, 2, 4] if dim == 3 else ([0, 1, 3, 4] if dim == 4 else range(5))
+    return f'{levels[picks[x]]} A, {levels[picks[y]]} B'
+
+
+def _rgb(value):
+    h = value.strip().lstrip('#')
+    if not re.fullmatch(r'[0-9a-fA-F]{6}', h):
+        raise ValueError(f'Invalid HEX color: {value}')
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _hex(rgb):
+    return '#{:02X}{:02X}{:02X}'.format(*(max(0, min(255, round(v))) for v in rgb))
+
+
+def resize_palette(colors, source_dim, target_dim):
+    """Bilinearly resize a square palette while preserving all four corners."""
+    if source_dim == target_dim:
+        return [_hex(_rgb(c)) for c in colors]
+    if len(colors) != source_dim * source_dim:
+        raise ValueError(f'Expected {source_dim * source_dim} colors, got {len(colors)}')
+    grid = [[_rgb(colors[x * source_dim + y]) for y in range(source_dim)]
+            for x in range(source_dim)]
+    output = []
+    for x in range(target_dim):
+        sx = x * (source_dim - 1) / (target_dim - 1)
+        x0, x1, tx = int(sx), min(source_dim - 1, int(sx) + 1), sx - int(sx)
+        for y in range(target_dim):
+            sy = y * (source_dim - 1) / (target_dim - 1)
+            y0, y1, ty = int(sy), min(source_dim - 1, int(sy) + 1), sy - int(sy)
+            rgb = []
+            for channel in range(3):
+                top = grid[x0][y0][channel] * (1 - ty) + grid[x0][y1][channel] * ty
+                bottom = grid[x1][y0][channel] * (1 - ty) + grid[x1][y1][channel] * ty
+                rgb.append(top * (1 - tx) + bottom * tx)
+            output.append(_hex(rgb))
+    return output
+
+
+def parse_palette_text(text, dim):
+    """Read labelled/plain Staridas HEX, CSS, or JSON palette output."""
+    raw = (text or '').strip()
+    if not raw:
+        raise ValueError('No palette colors supplied')
+    labelled = re.findall(
+        r'["\']?(?:--clr-)?([A-E][1-5])["\']?\s*(?::|=)?\s*["\']?(#[0-9a-fA-F]{6})',
+        raw, flags=re.IGNORECASE)
+    if labelled:
+        found, duplicates = {}, set()
+        for code, color in labelled:
+            code = code.upper()
+            if code in found:
+                duplicates.add(code)
+            found[code] = color.upper()
+        expected = class_codes(dim)
+        missing = [c for c in expected if c not in found]
+        unexpected = [c for c in found if c not in expected]
+        if duplicates:
+            raise ValueError('Duplicate palette classes: ' + ', '.join(sorted(duplicates)))
+        if missing or unexpected:
+            details = []
+            if missing:
+                details.append('missing ' + ', '.join(missing))
+            if unexpected:
+                details.append('unexpected ' + ', '.join(unexpected))
+            raise ValueError(f'Invalid {dim}×{dim} labelled palette: ' + '; '.join(details))
+        return [found[c] for c in expected]
+    try:
+        obj = json.loads(raw)
+        candidates = obj.get('colors', obj.get('palette', obj)) if isinstance(obj, dict) else obj
+        flat = []
+        if isinstance(candidates, list):
+            for item in candidates:
+                flat.extend(item if isinstance(item, list) else [item])
+        colors = [str(v) for v in flat if re.fullmatch(r'#[0-9a-fA-F]{6}', str(v).strip())]
+    except Exception:
+        colors = []
+    if not colors:
+        colors = re.findall(r'#[0-9a-fA-F]{6}', raw)
+    expected_count = dim * dim
+    if len(colors) != expected_count:
+        raise ValueError(f'Expected {expected_count} colors for {dim}×{dim}, found {len(colors)}')
+    return [c.upper() for c in colors]
+
+
+def palette_colors(name, dim, custom_text=''):
+    if name == 'Custom / Staridas import':
+        return parse_palette_text(custom_text, dim)
+    return resize_palette(PALETTES[name], 3, dim)
+
+
+def transpose_palette(colors, dim=None):
+    """Swap X/Y axes for any supported square palette."""
+    dim = dim or int(round(len(colors) ** 0.5))
+    if dim not in SUPPORTED_DIMS or len(colors) != dim * dim:
+        raise ValueError(f'transpose_palette expects a 3×3, 4×4, or 5×5 palette')
+    return [colors[row * dim + col] for col in range(dim) for row in range(dim)]

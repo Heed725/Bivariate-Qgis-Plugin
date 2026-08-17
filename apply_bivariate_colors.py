@@ -5,7 +5,7 @@ Supports all 30 built-in palettes or custom 9-color hex input.
 """
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from palettes import PALETTES, CODE_LABELS
+from palettes import PALETTES, class_codes, palette_colors, transpose_palette
 
 
 from qgis.core import (
@@ -14,6 +14,7 @@ from qgis.core import (
     QgsProcessingParameterField,
     QgsProcessingParameterString,
     QgsProcessingParameterEnum,
+    QgsProcessingParameterBoolean,
     QgsProcessingException,
     QgsCategorizedSymbolRenderer,
     QgsRendererCategory,
@@ -21,10 +22,7 @@ from qgis.core import (
 )
 
 
-PALETTE_NAMES = list(PALETTES.keys()) + ['Custom (enter hex codes below)']
-
-# Vector class order A1,A2,A3,B1,B2,B3,C1,C2,C3 maps to palette index order
-VECTOR_CLASSES = ['A1','A2','A3','B1','B2','B3','C1','C2','C3']
+PALETTE_NAMES = list(PALETTES.keys()) + ['Custom / Staridas import']
 
 
 class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
@@ -32,6 +30,8 @@ class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
     CLASS_FIELD = 'CLASS_FIELD'
     PALETTE_CHOICE = 'PALETTE_CHOICE'
     CUSTOM_COLORS = 'CUSTOM_COLORS'
+    GRID_SIZE = 'GRID_SIZE'
+    TRANSPOSE = 'TRANSPOSE'
     OUTLINE_COLOR = 'OUTLINE_COLOR'
     OUTLINE_WIDTH = 'OUTLINE_WIDTH'
 
@@ -47,11 +47,17 @@ class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
             self.PALETTE_CHOICE, 'Color palette',
             options=PALETTE_NAMES,
             defaultValue=6))  # DkBlue
+        self.addParameter(QgsProcessingParameterEnum(
+            self.GRID_SIZE, 'Grid size', options=['3×3', '4×4', '5×5'], defaultValue=0))
         self.addParameter(QgsProcessingParameterString(
             self.CUSTOM_COLORS,
-            'Custom colors — 9 hex codes (A1,A2,A3,B1,B2,B3,C1,C2,C3)',
+            'Staridas/Custom palette — paste labelled HEX, CSS, or JSON',
             defaultValue='#e8e8e8,#dfb0d6,#be64ac,#ace4e4,#a5add3,#8c62aa,#5ac8c8,#5698b9,#3b4994',
-            optional=True))
+            optional=True, multiLine=True))
+        self.addParameter(QgsProcessingParameterBoolean(
+            self.TRANSPOSE,
+            'Transpose axes (swap X ↔ Y)',
+            defaultValue=False))
         self.addParameter(QgsProcessingParameterString(
             self.OUTLINE_COLOR, 'Outline color', defaultValue='#808080', optional=True))
         self.addParameter(QgsProcessingParameterString(
@@ -62,6 +68,8 @@ class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
         class_field = self.parameterAsString(parameters, self.CLASS_FIELD, context)
         pal_idx = self.parameterAsInt(parameters, self.PALETTE_CHOICE, context)
         custom = self.parameterAsString(parameters, self.CUSTOM_COLORS, context)
+        dim = self.parameterAsEnum(parameters, self.GRID_SIZE, context) + 3
+        transpose = self.parameterAsBoolean(parameters, self.TRANSPOSE, context)
         outline_color = self.parameterAsString(parameters, self.OUTLINE_COLOR, context)
         outline_width = self.parameterAsString(parameters, self.OUTLINE_WIDTH, context)
 
@@ -69,16 +77,18 @@ class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
             raise QgsProcessingException('Invalid input layer')
 
         # Resolve palette
-        if pal_idx == len(PALETTE_NAMES) - 1:  # Custom
-            colors = [c.strip() for c in custom.split(',')]
-            if len(colors) != 9:
-                raise QgsProcessingException(f'Expected 9 hex codes, got {len(colors)}')
-        else:
-            pal_name = PALETTE_NAMES[pal_idx]
-            colors = PALETTES[pal_name]
-            feedback.pushInfo(f'Using palette: {pal_name}')
+        pal_name = PALETTE_NAMES[pal_idx]
+        try:
+            colors = palette_colors(pal_name, dim, custom)
+        except ValueError as exc:
+            raise QgsProcessingException(str(exc))
+        feedback.pushInfo(f'Using palette: {pal_name} ({dim}×{dim})')
 
-        color_map = dict(zip(VECTOR_CLASSES, colors))
+        if transpose:
+            colors = transpose_palette(colors, dim)
+            feedback.pushInfo('Palette axes transposed (X ↔ Y).')
+
+        color_map = dict(zip(class_codes(dim), colors))
         feedback.pushInfo('Color mapping: ' + str(color_map))
 
         geom_type = layer.geometryType()
@@ -102,14 +112,15 @@ class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
         return {}
 
     def name(self):           return 'applybivariatecolors'
-    def displayName(self):    return 'Apply Bivariate Color Scheme'
+    def displayName(self):    return 'Apply Bivariate Color Scheme (Vector)'
     def group(self):          return 'Cartography'
     def groupId(self):        return 'cartography'
     def createInstance(self): return ApplyBivariateColorsAlgorithm()
     def shortHelpString(self):
         names = ', '.join(list(PALETTES.keys()))
         return (
-            'Applies a bivariate color scheme to a layer with a class field (A1–C3).\n\n'
+            'Applies a 3×3, 4×4, or 5×5 bivariate color scheme.\n\n'
             f'Available palettes: {names}\n\n'
-            'Or choose Custom and enter 9 comma-separated hex codes in order: A1,A2,A3,B1,B2,B3,C1,C2,C3.'
+            'Choose Custom / Staridas import and paste labelled HEX, CSS, or JSON. '
+            'The transpose option works for all supported grid sizes.'
         )

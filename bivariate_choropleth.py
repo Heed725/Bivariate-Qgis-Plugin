@@ -25,6 +25,7 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
     VAR1_FIELD = 'VAR1_FIELD'
     VAR2_FIELD = 'VAR2_FIELD'
     CLASSIFICATION_METHOD = 'CLASSIFICATION_METHOD'
+    GRID_SIZE = 'GRID_SIZE'
     OUTPUT = 'OUTPUT'
 
     def initAlgorithm(self, config=None):
@@ -42,6 +43,8 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
             self.CLASSIFICATION_METHOD, 'Classification method',
             options=['Quantile (Equal Count)', 'Natural Breaks (Jenks)', 'Equal Interval'],
             defaultValue=0))
+        self.addParameter(QgsProcessingParameterEnum(
+            self.GRID_SIZE, 'Grid size', options=['3×3', '4×4', '5×5'], defaultValue=0))
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT, 'Output layer with bivariate classes'))
 
@@ -50,6 +53,7 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
         var1_field = self.parameterAsString(parameters, self.VAR1_FIELD, context)
         var2_field = self.parameterAsString(parameters, self.VAR2_FIELD, context)
         method = self.parameterAsEnum(parameters, self.CLASSIFICATION_METHOD, context)
+        dim = self.parameterAsEnum(parameters, self.GRID_SIZE, context) + 3
 
         if source is None:
             raise QgsProcessingException('Invalid input layer')
@@ -67,8 +71,8 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
         if not var1_values or not var2_values:
             raise QgsProcessingException('No valid values found')
 
-        var1_breaks = self._breaks(var1_values, method)
-        var2_breaks = self._breaks(var2_values, method)
+        var1_breaks = self._breaks(var1_values, method, dim)
+        var2_breaks = self._breaks(var2_values, method, dim)
 
         feedback.pushInfo(f'Variable 1 breaks: {var1_breaks}')
         feedback.pushInfo(f'Variable 2 breaks: {var2_breaks}')
@@ -92,8 +96,8 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
             v1 = float(feature[var1_field]) if feature[var1_field] is not None else float('-inf')
             v2 = float(feature[var2_field]) if feature[var2_field] is not None else float('-inf')
 
-            c1 = 3 if v1 > var1_breaks[1] else (2 if v1 > var1_breaks[0] else 1)
-            c2 = 'C' if v2 > var2_breaks[1] else ('B' if v2 > var2_breaks[0] else 'A')
+            c1 = 1 + sum(v1 > b for b in var1_breaks)
+            c2 = chr(65 + sum(v2 > b for b in var2_breaks))
 
             out = QgsFeature(fields)
             out.setGeometry(feature.geometry())
@@ -107,26 +111,26 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
 
         return {self.OUTPUT: dest_id}
 
-    def _breaks(self, values, method):
+    def _breaks(self, values, method, dim):
         s = sorted(values)
         n = len(s)
         if method == 0:  # Quantile
-            return [s[n // 3], s[(2 * n) // 3]]
+            return [s[min(n - 1, (n * i) // dim)] for i in range(1, dim)]
         elif method == 1:  # Jenks approx
-            return [s[int(n * 0.33)], s[int(n * 0.67)]]
+            return [s[min(n - 1, int(n * i / dim))] for i in range(1, dim)]
         else:  # Equal interval
             mn, mx = min(values), max(values)
-            iv = (mx - mn) / 3
-            return [mn + iv, mn + 2 * iv]
+            iv = (mx - mn) / dim
+            return [mn + iv * i for i in range(1, dim)]
 
     def name(self):          return 'bivariatechoropleth'
-    def displayName(self):   return 'Bivariate Choropleth Classification'
+    def displayName(self):   return 'Bivariate Choropleth Classification (Vector)'
     def group(self):         return 'Cartography'
     def groupId(self):       return 'cartography'
     def createInstance(self):return BivariateChoroplethAlgorithm()
     def shortHelpString(self):
         return (
-            'Classifies two numeric fields into a 3×3 bivariate scheme (A1–C3).\n\n'
-            'Output adds: Var1_Class (1-3), Var2_Class (A-C), Bi_Class (e.g. B2).\n'
+            'Classifies two numeric fields into a selectable 3×3, 4×4, or 5×5 scheme.\n\n'
+            'Output adds Var1_Class, Var2_Class and Bi_Class (for example B2 or E5).\n'
             'Use Bi_Class with the Apply Bivariate Color Scheme tool to style the layer.'
         )

@@ -1,11 +1,11 @@
 [general]
 name=Bivariate QGIS Plugin
 qgisMinimumVersion=3.16
-description=Ultimate bivariate mapping suite — 30 palettes, vector & raster classification, QML styling, diamond & square legend generators, and styled Leaflet web export.
-version=0.0.1
+description=Bivariate mapping suite with selectable 3x3, 4x4 and 5x5 classification, Staridas palette import, vector/raster styling, legends and Leaflet export.
+version=0.0.4
 author=Hemed Lungo
-email=your@email.com
-about=Provides Processing tools for bivariate choropleth mapping plus two custom Print Layout items (Bivariate Box Legend and Bivariate Diamond Legend) accessible from the Layout Add Item menu.
+email=hemedlungo@gmail.com
+about=Provides Processing tools for bivariate choropleth mapping plus custom Print Layout legends. Staridas palette import integration credits Spiros Staridas, creator of the Staridas Geography Bivariate Color Palette Builder.
 
 tracker=https://github.com/Heed725/Bivariate-Qgis-Plugin/issues
 repository=https://github.com/Heed725/Bivariate-Qgis-Plugin
@@ -16,3 +16,36 @@ icon=icon.png
 experimental=False
 deprecated=False
 hasProcessingProvider=yes
+
+changelog=0.0.4
+    - Added selectable 3x3, 4x4 and 5x5 grids across vector classification,
+      raster classification, styling, Print Layout legends and Leaflet export.
+    - Added Staridas palette detection for labelled HEX lines, CSS variables
+      and JSON objects, including shuffled-key ordering and validation.
+    - Built-in 3x3 palettes are interpolated for 4x4 and 5x5 while preserving
+      corner colors.
+    - Preserved the 0.0.3 transpose option for every supported grid size.
+    - Credited Spiros Staridas for the Staridas Geography palette builder and
+      its export formats used by the integration workflow.
+  0.0.3
+    - All Processing tools now show (Raster) or (Vector) suffixes in their
+      display names so users can tell at a glance which input data type each
+      tool expects.
+    - New: "Transpose axes (swap X ↔ Y)" tick option in the Print Layout
+      Bivariate Box / Diamond Legend properties, in the "Apply Bivariate
+      Color Scheme" processing tool, and in the "Bivariate Style Generator"
+      processing tool. Swaps which variable is on the X vs Y axis without
+      changing the colors themselves: the diagonal corners (low-low,
+      high-high) stay put, and the two off-diagonal corners reflect across
+      the diagonal. In the Print Layout legend, axis labels swap accordingly
+      and the state persists across project save/load.
+    - Bivariate Raster Generator: switched to a quantile-based, QGIS 3.40
+      compatible implementation. Uses the gdal:rastercalculator with
+      explicit RTYPE=Float32 (and gdal:warpreproject DATA_TYPE=Float32 for
+      alignment), with an automatic fallback to the QGIS native
+      QgsRasterCalculator if the GDAL path fails. Pinned enum values
+      eliminate the silent type-coercion issues seen on QGIS 3.40 and
+      Windows. Outputs unchanged: A-class (1-3), B-class (1-3), bivariate
+      code (11-33).
+  0.0.2
+    - Initial public release.

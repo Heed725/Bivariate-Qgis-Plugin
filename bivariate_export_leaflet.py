@@ -4,14 +4,14 @@ Exports a bivariate-classified vector layer to a fully-styled standalone Leaflet
 - Full palette-matched styling (no grey placeholders)
 - Styled sidebar with legend, variable descriptions, and data insights
 - Hover highlight + click popup with all attributes
-- Bivariate 3×3 legend with axis labels and hover-to-highlight interaction
+- Bivariate 3×3, 4×4 or 5×5 legend with hover-to-highlight interaction
 - 4 basemap options
 - Dark/light theme switch
 - Search bar, fullscreen, zoom controls
 """
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from palettes import PALETTES, CODE_LABELS
+from palettes import PALETTES, class_codes, palette_colors
 
 
 from qgis.PyQt.QtCore import QCoreApplication
@@ -30,8 +30,7 @@ from qgis.core import (
 )
 import json, sys, os
 
-PALETTE_NAMES   = list(PALETTES.keys()) + ['Custom (enter hex codes below)']
-VECTOR_CLASSES  = ['A1','A2','A3','B1','B2','B3','C1','C2','C3']
+PALETTE_NAMES   = list(PALETTES.keys()) + ['Custom / Staridas import']
 BASEMAPS = [
     ('CartoDB Positron (Light)',
      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -61,6 +60,7 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
     EXTRA_FIELDS  = 'EXTRA_FIELDS'
     PALETTE       = 'PALETTE'
     CUSTOM_COLORS = 'CUSTOM_COLORS'
+    GRID_SIZE = 'GRID_SIZE'
     MAP_TITLE     = 'MAP_TITLE'
     MAP_SUBTITLE  = 'MAP_SUBTITLE'
     VAR_A_LABEL   = 'VAR_A_LABEL'
@@ -72,7 +72,7 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
     def tr(self, t): return QCoreApplication.translate('BivariateLeafletExporter', t)
     def createInstance(self): return BivariateLeafletExporter()
     def name(self):        return 'bivariate_leaflet_exporter'
-    def displayName(self): return self.tr('Bivariate Leaflet Exporter')
+    def displayName(self): return self.tr('Bivariate Leaflet Exporter (Vector)')
     def group(self):       return self.tr('Cartography')
     def groupId(self):     return 'cartography'
     def shortHelpString(self):
@@ -86,7 +86,7 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
             '• Dark/light theme switch button\n'
             '• Basemap switcher (4 options)\n'
             '• Zoom, scale bar, attribution controls\n\n'
-            'Requires a layer with Bi_Class field (A1–C3) from Bivariate Choropleth Classification tool.')
+            'Requires a layer with Bi_Class from Bivariate Choropleth Classification and a matching grid size.')
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterVectorLayer(
@@ -105,10 +105,12 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterEnum(
             self.PALETTE, self.tr('Color palette'),
             options=PALETTE_NAMES, defaultValue=6))
+        self.addParameter(QgsProcessingParameterEnum(
+            self.GRID_SIZE, self.tr('Grid size'), options=['3×3', '4×4', '5×5'], defaultValue=0))
         self.addParameter(QgsProcessingParameterString(
             self.CUSTOM_COLORS,
-            self.tr('Custom colors — 9 hex codes, order A1,A2,A3,B1,B2,B3,C1,C2,C3'),
-            optional=True))
+            self.tr('Staridas/Custom palette — paste labelled HEX, CSS, or JSON'),
+            optional=True, multiLine=True))
         self.addParameter(QgsProcessingParameterString(
             self.MAP_TITLE, self.tr('Map title'),
             defaultValue='Bivariate Choropleth Map'))
@@ -138,6 +140,7 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
         extra_str  = self.parameterAsString(parameters, self.EXTRA_FIELDS, context)
         pal_idx    = self.parameterAsInt(parameters, self.PALETTE, context)
         custom     = self.parameterAsString(parameters, self.CUSTOM_COLORS, context)
+        dim        = self.parameterAsEnum(parameters, self.GRID_SIZE, context) + 3
         title      = self.parameterAsString(parameters, self.MAP_TITLE, context)
         subtitle   = self.parameterAsString(parameters, self.MAP_SUBTITLE, context)
         var_a      = self.parameterAsString(parameters, self.VAR_A_LABEL, context)
@@ -150,13 +153,14 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
             raise QgsProcessingException('Invalid input layer')
 
         # Resolve palette
-        if pal_idx == len(PALETTE_NAMES) - 1:
-            colors = [c.strip() for c in custom.split(',')]
-            if len(colors) != 9: raise QgsProcessingException('Need 9 hex codes')
-        else:
-            colors = PALETTES[PALETTE_NAMES[pal_idx]]
+        pal_name = PALETTE_NAMES[pal_idx]
+        try:
+            colors = palette_colors(pal_name, dim, custom)
+        except ValueError as exc:
+            raise QgsProcessingException(str(exc))
 
-        color_map = dict(zip(VECTOR_CLASSES, colors))
+        vector_classes = class_codes(dim)
+        color_map = dict(zip(vector_classes, colors))
 
         # Outline colors: slightly darker version of fill
         def darken(hex_c, factor=0.65):
@@ -177,7 +181,7 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
         popup_fields = extra_fields if extra_fields else all_layer_fields
 
         features = []
-        class_counts = {c: 0 for c in VECTOR_CLASSES}
+        class_counts = {c: 0 for c in vector_classes}
         total = layer.featureCount()
 
         for i, feat in enumerate(layer.getFeatures()):
@@ -209,11 +213,11 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
         # Row order top→bottom in HTML = C (High B) → B (Mid B) → A (Low B)
         # Column order left→right = 1 (Low A) → 2 (Mid A) → 3 (High A)
         # So grid reads: A1 A2 A3 (bottom), B1 B2 B3 (middle), C1 C2 C3 (top)
-        grid_order = [
-            ('C1',6),('C2',7),('C3',8),
-            ('B1',3),('B2',4),('B3',5),
-            ('A1',0),('A2',1),('A3',2),
-        ]
+        grid_order = []
+        for x in reversed(range(dim)):
+            for y in range(dim):
+                cls = f'{chr(65 + x)}{y + 1}'
+                grid_order.append((cls, x * dim + y))
         legend_cells_html = ''
         for cls, idx in grid_order:
             c = colors[idx]
@@ -226,7 +230,7 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
         # Basemap tile URLs as JS array
         basemaps_js = json.dumps([{'name':b[0],'url':b[1],'attr':b[2]} for b in BASEMAPS])
         default_dark = 'true' if dark_def else 'false'
-        pal_name_safe = PALETTE_NAMES[pal_idx] if pal_idx < len(PALETTES) else 'Custom'
+        pal_name_safe = pal_name
 
         html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -268,8 +272,8 @@ html,body{{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',H
   writing-mode:vertical-rl;transform:rotate(180deg);
   font-weight:600;letter-spacing:.04em;opacity:.5}}
 .legend-right{{display:flex;flex-direction:column;gap:0}}
-.legend-grid{{display:grid;grid-template-columns:repeat(3,34px);
-  grid-template-rows:repeat(3,34px);gap:3px}}
+.legend-grid{{display:grid;grid-template-columns:repeat({dim},34px);
+  grid-template-rows:repeat({dim},34px);gap:3px}}
 .lc{{border-radius:4px;cursor:pointer;transition:transform .12s,box-shadow .12s;
   border:1.5px solid rgba(0,0,0,.1)}}
 .lc:hover{{transform:scale(1.15);box-shadow:0 2px 8px rgba(0,0,0,.25);z-index:2;position:relative}}
@@ -282,7 +286,7 @@ html,body{{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',H
 .ax-x-arrow{{font-size:10px;opacity:.4;font-weight:600}}
 
 /* ── Class stats ── */
-.class-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}}
+.class-grid{{display:grid;grid-template-columns:repeat({dim},1fr);gap:4px}}
 .class-chip{{border-radius:4px;padding:4px 5px;text-align:center;font-size:10px;
   font-weight:700;cursor:pointer;transition:opacity .15s,transform .15s;
   border:1px solid rgba(0,0,0,.1)}}
@@ -350,7 +354,7 @@ html,body{{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',H
     <div class="legend-wrap">
 
       <!-- Y axis: variable B label rotated -->
-      <div class="legend-axes-y" style="height:108px">
+      <div class="legend-axes-y" style="height:{dim * 34 + (dim - 1) * 3}px">
         <div class="ax-label-y" style="writing-mode:vertical-rl;transform:rotate(180deg)">High</div>
         <div class="ax-x-arrow" style="writing-mode:vertical-rl;transform:rotate(180deg)">↑</div>
         <div class="ax-label-y" style="writing-mode:vertical-rl;transform:rotate(180deg)">Low</div>
