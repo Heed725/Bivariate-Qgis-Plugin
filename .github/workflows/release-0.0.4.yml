@@ -3,6 +3,7 @@ name: Package and publish plugin 0.0.4
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -33,15 +34,15 @@ jobs:
           unzip -t bivariate_plugin-0.0.4.zip
           grep -q '^version=0.0.4$' metadata.txt
 
-      - name: Publish GitHub release
+      - name: Publish or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           if gh release view 0.0.4 >/dev/null 2>&1; then
-            echo 'Release 0.0.4 already exists; no action needed.'
+            gh release upload 0.0.4 bivariate_plugin-0.0.4.zip --clobber
           else
             gh release create 0.0.4 bivariate_plugin-0.0.4.zip \
               --title 'Bivariate QGIS Plugin 0.0.4' \
-              --notes 'Adds 3x3, 4x4 and 5x5 grids; Staridas labelled HEX, CSS and JSON palette import; built-in palette interpolation; and preserves transpose support. Credits Spiros Staridas for the Staridas Geography Bivariate Color Palette Builder.'
+              --notes 'Adds 3x3, 4x4 and 5x5 grids; Staridas labelled HEX, CSS and JSON palette import; compact Print Layout legend fitting; built-in palette interpolation; and preserves transpose support. Credits Spiros Staridas for the Staridas Geography Bivariate Color Palette Builder.'
           fi
