@@ -18,12 +18,19 @@ deprecated=False
 hasProcessingProvider=yes
 
 changelog=0.0.4
-    - Print Layout Box and Diamond legends can now auto-sense bivariate raster
+    - Unified map and Print Layout axes: Variable 1 is Y/vertical and Variable 2
+      is X/horizontal everywhere in the plugin.
+    - Raster bivariate codes now use X first, Y second: Raster B/Variable 2 is
+      the first digit and Raster A/Variable 1 is the second digit, matching
+      Print Layout cell positions and vector Bi_Class semantics.
+    - Print Layout label fields now explicitly show Variable 2 (X) and
+      Variable 1 (Y), while preserving existing project storage compatibility.
+    - Print Layout Box and Diamond legends can auto-sense bivariate raster
       or vector layers actually rendered by layout map items.
     - Added a Source layer selector with Auto, Manual and explicit raster/vector
       choices plus a Rescan layout action and detection status.
-    - Plugin styling tools now store lightweight palette metadata on styled
-      layers for reliable 3x3, 4x4 and 5x5 Print Layout legend detection.
+    - Plugin styling tools store lightweight palette metadata on styled layers
+      for reliable 3x3, 4x4 and 5x5 Print Layout legend detection.
     - Added selectable 3x3, 4x4 and 5x5 grids across vector classification,
       raster classification, styling, Print Layout legends and Leaflet export.
     - Added Staridas palette detection for labelled HEX lines, CSS variables
@@ -33,8 +40,8 @@ changelog=0.0.4
     - Preserved the 0.0.3 transpose option for every supported grid size.
     - Credited Spiros Staridas for the Staridas Geography palette builder and
       its export formats used by the integration workflow.
-    - Print Layout box legends now fit and centre the palette grid when their
-      item is resized, avoiding unused space while preserving square cells.
+    - Print Layout box legends fit and centre the palette grid when their item
+      is resized, avoiding unused space while preserving square cells.
   0.0.3
     - All Processing tools now show (Raster) or (Vector) suffixes in their
       display names so users can tell at a glance which input data type each
@@ -53,7 +60,6 @@ changelog=0.0.4
       alignment), with an automatic fallback to the QGIS native
       QgsRasterCalculator if the GDAL path fails. Pinned enum values
       eliminate the silent type-coercion issues seen on QGIS 3.40 and
-      Windows. Outputs unchanged: A-class (1-3), B-class (1-3), bivariate
-      code (11-33).
+      Windows.
   0.0.2
     - Initial public release.
