@@ -198,8 +198,10 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._dim = 3
         self._cell_size = 18.0
         self._gap = 1.5
-        self._label_a = 'Variable A'
-        self._label_b = 'Variable B'
+        # Keep internal A/B fields for project compatibility, but expose the
+        # same convention as the map: Variable 2 = X, Variable 1 = Y.
+        self._label_a = 'Variable 2'
+        self._label_b = 'Variable 1'
         self._show_labels = False
         self._show_codes = False
         self._fit_to_item = True
@@ -231,8 +233,8 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._dim = int(el.attribute('dimension', '3'))
         self._cell_size = float(el.attribute('cellSize', '18'))
         self._gap = float(el.attribute('gap', '1.5'))
-        self._label_a = el.attribute('labelA', 'Variable A')
-        self._label_b = el.attribute('labelB', 'Variable B')
+        self._label_a = el.attribute('labelA', 'Variable 2')
+        self._label_b = el.attribute('labelB', 'Variable 1')
         self._show_labels = bool(int(el.attribute('showLabels', '0')))
         self._show_codes = bool(int(el.attribute('showCodes', '0')))
         self._fit_to_item = bool(int(el.attribute('fitToItem', '1')))
@@ -359,8 +361,8 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         self._gap = QDoubleSpinBox(); self._gap.setRange(0,20); self._gap.setSingleStep(.5); f2.addRow('Gap:', self._gap)
         self._fit = QCheckBox('Fit and center grid inside item'); f2.addRow('', self._fit); root.addWidget(g2)
 
-        g3 = QGroupBox('Labels'); f3 = QFormLayout(g3)
-        self._la = QLineEdit(); self._lb = QLineEdit(); f3.addRow('Variable A:', self._la); f3.addRow('Variable B:', self._lb)
+        g3 = QGroupBox('Labels — same axes as map'); f3 = QFormLayout(g3)
+        self._la = QLineEdit(); self._lb = QLineEdit(); f3.addRow('Variable 2 (X):', self._la); f3.addRow('Variable 1 (Y):', self._lb)
         self._show_labels = QCheckBox('Show axis labels (box only)'); self._show_codes = QCheckBox('Show class codes on cells')
         f3.addRow(self._show_labels); f3.addRow(self._show_codes); root.addWidget(g3)
 
@@ -399,11 +401,11 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
     def _update_status(self):
         sid = self._item._linked_layer_id
         if sid == SOURCE_MANUAL:
-            self._status.setText('Manual palette'); self._enable_palette(True); return
+            self._status.setText('Manual palette • X = Variable 2, Y = Variable 1'); self._enable_palette(True); return
         layer = _source_layer(self._item.layout(), sid); detected = _detect(layer)
         if detected:
             _, dim = detected; kind = 'raster' if isinstance(layer, QgsRasterLayer) else 'vector'
-            self._status.setText(f'Detected {dim}×{dim} {kind}: {layer.name()}'); self._enable_palette(False)
+            self._status.setText(f'Detected {dim}×{dim} {kind}: {layer.name()} • X = Variable 2, Y = Variable 1'); self._enable_palette(False)
         else:
             self._status.setText('No bivariate raster/vector style detected; manual palette is used.'); self._enable_palette(True)
 
