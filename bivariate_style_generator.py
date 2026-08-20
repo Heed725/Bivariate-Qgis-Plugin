@@ -3,7 +3,7 @@ QGIS Processing Script: Bivariate Style Generator
 Creates a QML style file for bivariate rasters (values 11-33).
 Supports all 30 built-in palettes or custom 9-color hex input.
 """
-import os as _os, sys as _sys
+import os as _os, sys as _sys, json as _json
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from palettes import PALETTES, class_codes, code_label, palette_colors, transpose_palette
 
@@ -120,7 +120,11 @@ class BivariateStyleGenerator(QgsProcessingAlgorithm):
                 processing.run('qgis:setstyleforrasterlayer',
                                {'INPUT': raster, 'STYLE': qml},
                                context=context, feedback=feedback)
-                feedback.pushInfo('Style applied to raster.')
+                # Persist style metadata for Print Layout auto-detection.
+                raster.setCustomProperty('bivariate_plugin/dimension', dim)
+                raster.setCustomProperty('bivariate_plugin/colors', _json.dumps(colors))
+                raster.setCustomProperty('bivariate_plugin/kind', 'raster')
+                feedback.pushInfo('Style applied to raster and linked for Print Layout sensing.')
             except Exception as e:
                 feedback.pushWarning(f'Auto-apply failed: {e}')
 
