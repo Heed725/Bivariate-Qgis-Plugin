@@ -1,165 +1,253 @@
-"""
-layout_items.py — Bivariate Legend Layout Items
-Modelled exactly on DataPlotly's approach (DataPlotly-4_4_1).
+"""Native QGIS Print Layout items for bivariate box/diamond legends."""
+import json
+import math
+import re
 
-Two separate classes/registrations required:
-  1. PlotLayoutItemMetadata       → QgsLayoutItemAbstractMetadata
-     registered via: QgsApplication.layoutItemRegistry().addLayoutItemType(...)
-
-  2. PlotLayoutItemGuiMetadata    → QgsLayoutItemAbstractGuiMetadata
-     registered via: QgsGui.layoutItemGuiRegistry().addLayoutItemGuiMetadata(...)
-
-Both metadata objects must be stored on the plugin instance (not module-level)
-so Python's GC cannot destroy them while QGIS holds them.
-"""
-
-import os, sys, math
-_dir = os.path.dirname(os.path.abspath(__file__))
-if _dir not in sys.path:
-    sys.path.insert(0, _dir)
+from qgis.PyQt.QtCore import Qt, QRectF, QPointF, QCoreApplication
+from qgis.PyQt.QtGui import QPainter, QColor, QFont, QPen, QBrush, QPolygonF, QIcon, QPixmap, QPainterPath
+from qgis.PyQt.QtWidgets import (
+    QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QComboBox, QLineEdit,
+    QDoubleSpinBox, QCheckBox, QGroupBox, QColorDialog, QLabel, QPushButton,
+    QGraphicsItem,
+)
+from qgis.core import (
+    QgsApplication, QgsCategorizedSymbolRenderer, QgsLayoutItem,
+    QgsLayoutItemAbstractMetadata, QgsLayoutItemMap, QgsLayoutItemRegistry,
+    QgsLayoutSize, QgsPalettedRasterRenderer, QgsProject, QgsRasterLayer,
+    QgsUnitTypes, QgsVectorLayer,
+)
+from qgis.gui import QgsLayoutItemAbstractGuiMetadata, QgsLayoutItemBaseWidget
 
 from .palettes import PALETTES, class_codes, palette_colors, transpose_palette
 
-from qgis.PyQt.QtCore    import Qt, QRectF, QPointF, QCoreApplication
-from qgis.PyQt.QtGui     import (QPainter, QColor, QFont, QPen, QBrush,
-                                  QPolygonF, QIcon, QPixmap, QPainterPath)
-from qgis.PyQt.QtWidgets import (QWidget, QVBoxLayout, QFormLayout,
-                                  QComboBox, QLineEdit, QDoubleSpinBox,
-                                  QCheckBox, QGroupBox, QColorDialog,
-                                  QPushButton, QGraphicsItem)
-from qgis.core import (
-    QgsLayoutItem,
-    QgsLayoutItemRegistry,
-    QgsLayoutItemAbstractMetadata,
-    QgsApplication,
-    QgsLayoutSize, QgsUnitTypes,
-    QgsReadWriteContext,
-)
-from qgis.gui import (
-    QgsGui,
-    QgsLayoutItemBaseWidget,
-    QgsLayoutItemAbstractGuiMetadata,   # ← correct class (not QgsLayoutItemGuiMetadata)
-)
-
-# ── Type IDs — must be unique integers > QgsLayoutItemRegistry.PluginItem ─────
-# DataPlotly uses PluginItem + 1337; we use PluginItem + 1338 / 1339
-PLUGIN_BASE  = QgsLayoutItemRegistry.PluginItem
-TYPE_BOX     = PLUGIN_BASE + 1338
+PLUGIN_BASE = QgsLayoutItemRegistry.PluginItem
+TYPE_BOX = PLUGIN_BASE + 1338
 TYPE_DIAMOND = PLUGIN_BASE + 1339
-
 PALETTE_NAMES = list(PALETTES.keys()) + ['Custom / Staridas import']
+SOURCE_AUTO = '__AUTO__'
+SOURCE_MANUAL = '__MANUAL__'
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _text_color(hex_c):
-    h = hex_c.lstrip('#')
-    r, g, b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
-    return QColor('#111111') if (r*299+g*587+b*114)/1000 > 155 else QColor('#f5f5f5')
-
-
-def _resolve_colors(pal_idx, custom_str, dim=3):
-    name = PALETTE_NAMES[pal_idx] if pal_idx < len(PALETTE_NAMES) else PALETTE_NAMES[-1]
+def _hex(color):
     try:
-        return palette_colors(name, dim, custom_str)
-    except ValueError:
-        return ['#cccccc'] * (dim * dim)
+        return QColor(color).name().upper()
+    except Exception:
+        return None
 
 
-def _make_icon(colors, diamond=False, size=24):
-    """Tiny 3×3 preview for the Add-Item toolbar button."""
+def _plugin_style(layer):
+    try:
+        dim = int(layer.customProperty('bivariate_plugin/dimension', 0))
+        colors = json.loads(str(layer.customProperty('bivariate_plugin/colors', '') or ''))
+        if dim not in (3, 4, 5) or not isinstance(colors, list) or len(colors) != dim * dim:
+            return None
+        colors = [_hex(c) for c in colors]
+        return (colors, dim) if all(colors) else None
+    except Exception:
+        return None
+
+
+def _vector_style(layer):
+    try:
+        renderer = layer.renderer()
+        if not isinstance(renderer, QgsCategorizedSymbolRenderer):
+            return None
+        found = {}
+        for cat in renderer.categories():
+            code = str(cat.value()).strip().upper()
+            if not re.fullmatch(r'[A-E][1-5]', code) or cat.symbol() is None:
+                continue
+            color = _hex(cat.symbol().color())
+            if color:
+                found[code] = color
+        if not found:
+            return None
+        dim = max(max(ord(c[0]) - 64 for c in found), max(int(c[1:]) for c in found))
+        expected = class_codes(dim, vector=True) if dim in (3, 4, 5) else []
+        return ([found[c] for c in expected], dim) if expected and all(c in found for c in expected) else None
+    except Exception:
+        return None
+
+
+def _raster_style(layer):
+    try:
+        renderer = layer.renderer()
+        if not isinstance(renderer, QgsPalettedRasterRenderer) and not hasattr(renderer, 'classes'):
+            return None
+        found = {}
+        for entry in renderer.classes():
+            try:
+                code = str(int(round(float(entry.value))))
+                color = _hex(entry.color)
+            except Exception:
+                continue
+            if re.fullmatch(r'[1-5][1-5]', code) and color:
+                found[code] = color
+        if not found:
+            return None
+        dim = max(max(int(c[0]) for c in found), max(int(c[1]) for c in found))
+        expected = class_codes(dim, vector=False) if dim in (3, 4, 5) else []
+        return ([found[c] for c in expected], dim) if expected and all(c in found for c in expected) else None
+    except Exception:
+        return None
+
+
+def _detect(layer):
+    if layer is None:
+        return None
+    try:
+        if not layer.isValid():
+            return None
+    except Exception:
+        return None
+    if isinstance(layer, QgsVectorLayer):
+        return _vector_style(layer) or _plugin_style(layer)
+    if isinstance(layer, QgsRasterLayer):
+        return _raster_style(layer) or _plugin_style(layer)
+    return None
+
+
+def _layout_layers(layout):
+    result, seen = [], set()
+
+    def add(layer):
+        try:
+            if isinstance(layer, (QgsVectorLayer, QgsRasterLayer)) and layer.isValid() and layer.id() not in seen:
+                seen.add(layer.id())
+                result.append(layer)
+        except Exception:
+            pass
+
+    if layout is not None:
+        try:
+            for item in layout.items():
+                if not isinstance(item, QgsLayoutItemMap):
+                    continue
+                try:
+                    layers = item.layersToRender()
+                except Exception:
+                    try:
+                        layers = item.layers()
+                    except Exception:
+                        layers = []
+                for layer in layers:
+                    add(layer)
+        except Exception:
+            pass
+    if not result:
+        for layer in QgsProject.instance().mapLayers().values():
+            add(layer)
+    return result
+
+
+def _source_layer(layout, source_id):
+    if source_id == SOURCE_MANUAL:
+        return None
+    if source_id and source_id != SOURCE_AUTO:
+        layer = QgsProject.instance().mapLayer(source_id)
+        return layer if _detect(layer) else None
+    for layer in _layout_layers(layout):
+        if _detect(layer):
+            return layer
+    return None
+
+
+def _resolve_manual(pal_idx, custom, dim, transposed):
+    name = PALETTE_NAMES[pal_idx] if 0 <= pal_idx < len(PALETTE_NAMES) else PALETTE_NAMES[-1]
+    try:
+        colors = palette_colors(name, dim, custom)
+    except Exception:
+        colors = ['#CCCCCC'] * (dim * dim)
+    return transpose_palette(colors, dim) if transposed else colors
+
+
+def _text_color(color):
+    c = QColor(color)
+    return QColor('#111111') if (c.red() * 299 + c.green() * 587 + c.blue() * 114) / 1000 > 155 else QColor('#F5F5F5')
+
+
+def _icon(colors, diamond=False, size=24):
     px = QPixmap(size, size)
     px.fill(Qt.transparent)
-    p  = QPainter(px)
+    p = QPainter(px)
     p.setRenderHint(QPainter.Antialiasing)
-    # display order top-left → bottom-right: [6,7,8,3,4,5,0,1,2]
     order = [6, 7, 8, 3, 4, 5, 0, 1, 2]
     cs = size / 3.5
     for i, ci in enumerate(order):
-        col_i = i % 3
-        row_i = i // 3
+        col, row = i % 3, i // 3
         c = QColor(colors[ci])
         if diamond:
-            cx = size/2 + (col_i-1)*cs*0.82 - (row_i-1)*cs*0.82
-            cy = size/2 + (col_i-1)*cs*0.45 + (row_i-1)*cs*0.45 + cs*0.25
-            h  = cs * 0.5
-            pts = QPolygonF([QPointF(cx, cy-h), QPointF(cx+h, cy),
-                             QPointF(cx, cy+h), QPointF(cx-h, cy)])
-            p.setBrush(QBrush(c)); p.setPen(Qt.NoPen); p.drawPolygon(pts)
+            cx = size / 2 + (col - 1) * cs * .82 - (row - 1) * cs * .82
+            cy = size / 2 + (col - 1) * cs * .45 + (row - 1) * cs * .45 + cs * .25
+            h = cs * .5
+            p.setBrush(QBrush(c)); p.setPen(Qt.NoPen)
+            p.drawPolygon(QPolygonF([QPointF(cx, cy-h), QPointF(cx+h, cy), QPointF(cx, cy+h), QPointF(cx-h, cy)]))
         else:
-            x = col_i*(size/3.1)+1; y = row_i*(size/3.1)+1; w = size/3.1-1.5
+            x, y, w = col * (size / 3.1) + 1, row * (size / 3.1) + 1, size / 3.1 - 1.5
             p.fillRect(QRectF(x, y, w, w), QBrush(c))
     p.end()
     return QIcon(px)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Base item — shared state + XML round-trip
-# ─────────────────────────────────────────────────────────────────────────────
-
 class _BivariateBaseItem(QgsLayoutItem):
-
     def __init__(self, layout):
         super().__init__(layout)
         self.setCacheMode(QGraphicsItem.NoCache)
-        self._pal_idx     = 6
-        self._custom      = ''
-        self._dim         = 3
-        self._cell_size   = 18.0
-        self._gap         = 1.5
-        self._label_a     = 'Variable A'
-        self._label_b     = 'Variable B'
+        self._pal_idx = 6
+        self._custom = ''
+        self._dim = 3
+        self._cell_size = 18.0
+        self._gap = 1.5
+        self._label_a = 'Variable A'
+        self._label_b = 'Variable B'
         self._show_labels = False
-        self._show_codes  = False
+        self._show_codes = False
         self._fit_to_item = True
-        self._outline_hex = '#4a4a4a'
-        self._outline_w   = 0.3
-        self._transposed  = False   # X/Y axis swap toggle
+        self._outline_hex = '#4A4A4A'
+        self._outline_w = 0.3
+        self._transposed = False
+        self._linked_layer_id = SOURCE_AUTO
         try:
-            self.attemptResize(
-                QgsLayoutSize(80, 80, QgsUnitTypes.LayoutMillimeters))
+            self.attemptResize(QgsLayoutSize(80, 80, QgsUnitTypes.LayoutMillimeters))
         except Exception:
             pass
 
     def writePropertiesToElement(self, el, doc, ctx):
-        el.setAttribute('palIdx',     str(self._pal_idx))
-        el.setAttribute('custom',     self._custom)
-        el.setAttribute('dimension',  str(self._dim))
-        el.setAttribute('cellSize',   str(self._cell_size))
-        el.setAttribute('gap',        str(self._gap))
-        el.setAttribute('labelA',     self._label_a)
-        el.setAttribute('labelB',     self._label_b)
-        el.setAttribute('showLabels', str(int(self._show_labels)))
-        el.setAttribute('showCodes',  str(int(self._show_codes)))
-        el.setAttribute('fitToItem',  str(int(self._fit_to_item)))
-        el.setAttribute('outlineHex', self._outline_hex)
-        el.setAttribute('outlineW',   str(self._outline_w))
-        el.setAttribute('transposed', str(int(self._transposed)))
+        attrs = {
+            'palIdx': self._pal_idx, 'custom': self._custom, 'dimension': self._dim,
+            'cellSize': self._cell_size, 'gap': self._gap, 'labelA': self._label_a,
+            'labelB': self._label_b, 'showLabels': int(self._show_labels),
+            'showCodes': int(self._show_codes), 'fitToItem': int(self._fit_to_item),
+            'outlineHex': self._outline_hex, 'outlineW': self._outline_w,
+            'transposed': int(self._transposed), 'linkedLayer': self._linked_layer_id,
+        }
+        for key, value in attrs.items():
+            el.setAttribute(key, str(value))
         return True
 
     def readPropertiesFromElement(self, el, doc, ctx):
-        self._pal_idx     = int(el.attribute('palIdx',     '6'))
-        self._custom      = el.attribute('custom',     '')
-        self._dim         = int(el.attribute('dimension', '3'))
-        self._cell_size   = float(el.attribute('cellSize',   '18'))
-        self._gap         = float(el.attribute('gap',        '1.5'))
-        self._label_a     = el.attribute('labelA',     'Variable A')
-        self._label_b     = el.attribute('labelB',     'Variable B')
-        self._show_labels = bool(int(el.attribute('showLabels', '1')))
-        self._show_codes  = bool(int(el.attribute('showCodes',  '0')))
-        self._fit_to_item = bool(int(el.attribute('fitToItem',  '1')))
-        self._outline_hex = el.attribute('outlineHex', '#4a4a4a')
-        self._outline_w   = float(el.attribute('outlineW',   '0.3'))
-        self._transposed  = bool(int(el.attribute('transposed', '0')))
+        self._pal_idx = int(el.attribute('palIdx', '6'))
+        self._custom = el.attribute('custom', '')
+        self._dim = int(el.attribute('dimension', '3'))
+        self._cell_size = float(el.attribute('cellSize', '18'))
+        self._gap = float(el.attribute('gap', '1.5'))
+        self._label_a = el.attribute('labelA', 'Variable A')
+        self._label_b = el.attribute('labelB', 'Variable B')
+        self._show_labels = bool(int(el.attribute('showLabels', '0')))
+        self._show_codes = bool(int(el.attribute('showCodes', '0')))
+        self._fit_to_item = bool(int(el.attribute('fitToItem', '1')))
+        self._outline_hex = el.attribute('outlineHex', '#4A4A4A')
+        self._outline_w = float(el.attribute('outlineW', '0.3'))
+        self._transposed = bool(int(el.attribute('transposed', '0')))
+        self._linked_layer_id = el.attribute('linkedLayer', SOURCE_MANUAL) if el.hasAttribute('linkedLayer') else SOURCE_MANUAL
         return True
 
-    def _colors(self):
-        cols = _resolve_colors(self._pal_idx, self._custom, self._dim)
-        if self._transposed:
-            cols = transpose_palette(cols, self._dim)
-        return cols
+    def _legend_data(self):
+        if self._linked_layer_id != SOURCE_MANUAL:
+            detected = _detect(_source_layer(self.layout(), self._linked_layer_id))
+            if detected:
+                return detected
+        return _resolve_manual(self._pal_idx, self._custom, self._dim, self._transposed), self._dim
 
     def _pen(self):
         pen = QPen(QColor(self._outline_hex))
@@ -167,375 +255,202 @@ class _BivariateBaseItem(QgsLayoutItem):
         return pen
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Box Legend Item
-# ─────────────────────────────────────────────────────────────────────────────
-
 class BivariateBoxLegendItem(_BivariateBaseItem):
-
-    def type(self):
-        return TYPE_BOX
-
-    def displayName(self):
-        return 'Bivariate Box Legend'
-
-    def icon(self):
-        return _make_icon(self._colors(), diamond=False)
+    def type(self): return TYPE_BOX
+    def displayName(self): return 'Bivariate Box Legend'
+    def icon(self): return _icon(self._legend_data()[0], False)
 
     def draw(self, ctx):
-        painter = ctx.renderContext().painter()
-        painter.save()
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        scale = ctx.renderContext().scaleFactor()   # px per mm
-        iw    = self.rect().width() * scale
-        ih    = self.rect().height() * scale
-        gap   = self._gap * scale
-        dim   = self._dim
-
-        # Fit the palette to the freely resizable layout item. Reserve bands
-        # for axis titles first so the complete legend remains centred.
+        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.Antialiasing)
+        scale = ctx.renderContext().scaleFactor()
+        iw, ih = self.rect().width() * scale, self.rect().height() * scale
+        colors, dim = self._legend_data()
+        gap = self._gap * scale
         if self._fit_to_item:
-            label_cells = 0.72 if self._show_labels else 0.0
-            cs = max(
-                1.0,
-                (min(iw, ih) - (dim - 1) * gap) / (dim + label_cells))
+            label_cells = .72 if self._show_labels else 0
+            cs = max(1.0, (min(iw, ih) - (dim - 1) * gap) / (dim + label_cells))
         else:
             cs = self._cell_size * scale
-
         step = cs + gap
-        grid_w = dim * cs + (dim - 1) * gap
-        grid_h = grid_w
-        label_space = cs * 0.72 if self._show_labels else 0.0
-        ml = max(0.0, (iw - grid_w - label_space) / 2.0) + label_space
-        mb = max(0.0, (ih - grid_h - label_space) / 2.0)
-
-        pen    = self._pen()
-        colors = self._colors()
-
-        rendered_cell_mm = cs / scale
-        af = QFont(); af.setPointSizeF(max(5, rendered_cell_mm * 0.28))
-        cf = QFont(); cf.setPointSizeF(max(4, rendered_cell_mm * 0.22)); cf.setBold(True)
-
+        grid = dim * cs + (dim - 1) * gap
+        label_space = cs * .72 if self._show_labels else 0
+        ml = max(0, (iw - grid - label_space) / 2) + label_space
+        mt = max(0, (ih - grid - label_space) / 2)
+        pen = self._pen()
         codes = class_codes(dim, vector=False)
+        cf = QFont(); cf.setBold(True); cf.setPointSizeF(max(4, (cs / scale) * .22))
         for row in range(dim):
             for col in range(dim):
-                b_val = dim - 1 - row
-                a_val = col
-                code  = f'{a_val+1}{b_val+1}'
-                idx   = codes.index(code)
-                color = QColor(colors[idx])
-                x = ml + col * step
-                y = mb + row * step
-                painter.fillRect(QRectF(x, y, cs, cs), QBrush(color))
-                painter.setPen(pen)
-                painter.drawRect(QRectF(x, y, cs, cs))
+                code = f'{col+1}{dim-row}'
+                idx = codes.index(code)
+                x, y = ml + col * step, mt + row * step
+                p.fillRect(QRectF(x, y, cs, cs), QBrush(QColor(colors[idx])))
+                p.setPen(pen); p.drawRect(QRectF(x, y, cs, cs))
                 if self._show_codes:
-                    painter.setFont(cf)
-                    painter.setPen(QPen(_text_color(colors[idx])))
-                    painter.drawText(QRectF(x, y, cs, cs), Qt.AlignCenter, code)
-                    painter.setPen(pen)
-
+                    p.setFont(cf); p.setPen(QPen(_text_color(colors[idx])))
+                    p.drawText(QRectF(x, y, cs, cs), Qt.AlignCenter, code); p.setPen(pen)
         if self._show_labels:
-            painter.setFont(af)
-            painter.setPen(QPen(QColor('#555555')))
-            # When transposed, the axes are swapped: what was Variable A
-            # (X-axis) is now Variable B (Y-axis) and vice versa.
-            x_label = self._label_b if self._transposed else self._label_a
-            y_label = self._label_a if self._transposed else self._label_b
-            painter.drawText(
-                QRectF(ml, mb + grid_h + gap*0.5, grid_w, cs*0.8),
-                Qt.AlignCenter, f'{x_label}  →')
-            painter.save()
-            painter.translate(ml - gap*0.5, mb + grid_h/2)
-            painter.rotate(-90)
-            painter.drawText(QRectF(-grid_h/2, -cs*0.8, grid_h, cs*0.8),
-                             Qt.AlignCenter, f'↑  {y_label}')
-            painter.restore()
+            af = QFont(); af.setPointSizeF(max(5, (cs / scale) * .28)); p.setFont(af); p.setPen(QPen(QColor('#555555')))
+            x_label = self._label_b if self._transposed and self._linked_layer_id == SOURCE_MANUAL else self._label_a
+            y_label = self._label_a if self._transposed and self._linked_layer_id == SOURCE_MANUAL else self._label_b
+            p.drawText(QRectF(ml, mt + grid + gap * .5, grid, cs * .8), Qt.AlignCenter, f'{x_label}  →')
+            p.save(); p.translate(ml-gap*.5, mt+grid/2); p.rotate(-90)
+            p.drawText(QRectF(-grid/2, -cs*.8, grid, cs*.8), Qt.AlignCenter, f'↑  {y_label}'); p.restore()
+        p.restore()
 
-        painter.restore()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Diamond Legend Item
-# ─────────────────────────────────────────────────────────────────────────────
 
 class BivariateDiamondLegendItem(_BivariateBaseItem):
-
-    def type(self):
-        return TYPE_DIAMOND
-
-    def displayName(self):
-        return 'Bivariate Diamond Legend'
-
-    def icon(self):
-        return _make_icon(self._colors(), diamond=True)
+    def type(self): return TYPE_DIAMOND
+    def displayName(self): return 'Bivariate Diamond Legend'
+    def icon(self): return _icon(self._legend_data()[0], True)
 
     def draw(self, ctx):
-        painter = ctx.renderContext().painter()
-        painter.save()
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        # The painter coordinate system is already in px at scaleFactor px/mm,
-        # origin (0,0) = top-left of the item rect.
-        # self.rect() is in layout mm — multiply by scaleFactor to get px.
-        scale = ctx.renderContext().scaleFactor()   # px per mm
-        iw    = self.rect().width()  * scale        # item width  in px
-        ih    = self.rect().height() * scale        # item height in px
-
-        cs   = self._cell_size * scale
-        gap  = self._gap       * scale
-        step = cs + gap
-        half = (cs / 2.0) * math.sqrt(2)   # half-diagonal of one diamond
-        a45  = math.radians(45)
-
-        # ── Raw centres (origin = col0/row0, no offset) ───────────────────
+        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.Antialiasing)
+        scale = ctx.renderContext().scaleFactor()
+        iw, ih = self.rect().width() * scale, self.rect().height() * scale
+        colors, dim = self._legend_data()
+        cs, gap = self._cell_size * scale, self._gap * scale
+        step = cs + gap; half = cs / 2 * math.sqrt(2); a45 = math.radians(45)
         def raw(row, col):
-            x = col * step * math.cos(a45) - row * step * math.sin(a45)
-            y = col * step * math.sin(a45) + row * step * math.cos(a45)
-            return x, y
-
-        # ── Bounding box of the 9 diamond shapes ──────────────────────────
-        dim = self._dim
-        pts   = [raw(r, c) for r in range(dim) for c in range(dim)]
-        min_x = min(p[0] for p in pts) - half
-        max_x = max(p[0] for p in pts) + half
-        min_y = min(p[1] for p in pts) - half
-        max_y = max(p[1] for p in pts) + half
-        gw    = max_x - min_x
-        gh    = max_y - min_y
-
-        # ── Centre grid in item rect ───────────────────────────────────────
-        # Same logic as the box: subtract the raw bbox origin, then pad evenly.
-        ox = -min_x + (iw - gw) / 2.0
-        oy = -min_y + (ih - gh) / 2.0
-
-        def centre(row, col):
-            rx, ry = raw(row, col)
-            return rx + ox, ry + oy
-
-        # ── Draw diamonds ─────────────────────────────────────────────────
-        colors = self._colors()
-        pen    = self._pen()
-        cf = QFont(); cf.setPointSizeF(max(4, self._cell_size * 0.22)); cf.setBold(True)
-        af = QFont(); af.setPointSizeF(max(5, self._cell_size * 0.28))
-
-        codes = class_codes(dim, vector=False)
+            return (col*step*math.cos(a45)-row*step*math.sin(a45), col*step*math.sin(a45)+row*step*math.cos(a45))
+        pts = [raw(r, c) for r in range(dim) for c in range(dim)]
+        min_x, max_x = min(x for x, _ in pts)-half, max(x for x, _ in pts)+half
+        min_y, max_y = min(y for _, y in pts)-half, max(y for _, y in pts)+half
+        ox, oy = -min_x + (iw-(max_x-min_x))/2, -min_y + (ih-(max_y-min_y))/2
+        codes = class_codes(dim, vector=False); pen = self._pen()
+        cf = QFont(); cf.setBold(True); cf.setPointSizeF(max(4, self._cell_size * .22))
         for row in range(dim):
             for col in range(dim):
-                code  = f'{col+1}{row+1}'
-                idx   = codes.index(code)
-                color = QColor(colors[idx])
-                cx, cy = centre(row, col)
-
-                path = QPainterPath()
-                path.moveTo(cx,        cy - half)
-                path.lineTo(cx + half, cy)
-                path.lineTo(cx,        cy + half)
-                path.lineTo(cx - half, cy)
-                path.closeSubpath()
-
-                painter.fillPath(path, QBrush(color))
-                painter.setPen(pen)
-                painter.drawPath(path)
-
+                code = f'{col+1}{row+1}'; idx = codes.index(code); rx, ry = raw(row, col); cx, cy = rx+ox, ry+oy
+                path = QPainterPath(); path.moveTo(cx, cy-half); path.lineTo(cx+half, cy); path.lineTo(cx, cy+half); path.lineTo(cx-half, cy); path.closeSubpath()
+                p.fillPath(path, QBrush(QColor(colors[idx]))); p.setPen(pen); p.drawPath(path)
                 if self._show_codes:
-                    painter.setFont(cf)
-                    painter.setPen(QPen(_text_color(colors[idx])))
-                    painter.drawText(
-                        QRectF(cx - half * 0.6, cy - half * 0.4,
-                               half * 1.2,      half * 0.8),
-                        Qt.AlignCenter, code)
-                    painter.setPen(pen)
+                    p.setFont(cf); p.setPen(QPen(_text_color(colors[idx])))
+                    p.drawText(QRectF(cx-half*.6, cy-half*.4, half*1.2, half*.8), Qt.AlignCenter, code); p.setPen(pen)
+        p.restore()
 
-        painter.restore()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Item Properties Widget
-# ─────────────────────────────────────────────────────────────────────────────
 
 class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
-
     def __init__(self, parent, item):
         super().__init__(parent, item)
-        self._item     = item
-        self._building = False
-        self._build_ui()
-        self._populate()
+        self._item = item; self._building = False
+        self._build_ui(); self._populate()
 
     def setNewItem(self, item):
-        if item.type() not in (TYPE_BOX, TYPE_DIAMOND):
-            return False
-        self._item = item
-        self._populate()
-        return True
+        if item.type() not in (TYPE_BOX, TYPE_DIAMOND): return False
+        self._item = item; self._populate(); return True
 
     def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6); root.setSpacing(8)
+        root = QVBoxLayout(self); root.setContentsMargins(6, 6, 6, 6); root.setSpacing(8)
+        gs = QGroupBox('Print Layout layer sensing'); fs = QFormLayout(gs)
+        self._source = QComboBox(); fs.addRow('Source layer:', self._source)
+        row = QWidget(); h = QHBoxLayout(row); h.setContentsMargins(0,0,0,0); h.setSpacing(5)
+        self._rescan = QPushButton('Rescan layout'); self._status = QLabel(''); self._status.setWordWrap(True)
+        h.addWidget(self._rescan); h.addWidget(self._status, 1); fs.addRow('', row); root.addWidget(gs)
 
         g1 = QGroupBox('Palette'); f1 = QFormLayout(g1)
-        self._pal_combo = QComboBox(); self._pal_combo.addItems(PALETTE_NAMES)
-        f1.addRow('Palette:', self._pal_combo)
-        self._dim_combo = QComboBox(); self._dim_combo.addItems(['3×3', '4×4', '5×5'])
-        f1.addRow('Grid size:', self._dim_combo)
-        self._custom_edit = QLineEdit()
-        self._custom_edit.setPlaceholderText('Paste Staridas labelled HEX, CSS, or JSON')
-        f1.addRow('Custom colors:', self._custom_edit)
-        # Transpose tick: swaps the X and Y axes of the palette.
-        # Diagonal corners (low-low, high-high) stay put; the two off-diagonal
-        # corners reflect across the diagonal. Equivalent to swapping which
-        # variable each axis encodes.
-        self._transpose_chk = QCheckBox('Transpose axes (swap X ↔ Y)')
-        self._transpose_chk.setToolTip(
-            'Swap which variable is on the X axis vs the Y axis.\n'
-            'Diagonal corners (low-low, high-high) stay put;\n'
-            'the two off-diagonal corners reflect across the diagonal.')
-        f1.addRow('', self._transpose_chk)
-        root.addWidget(g1)
+        self._pal = QComboBox(); self._pal.addItems(PALETTE_NAMES); f1.addRow('Palette:', self._pal)
+        self._dim = QComboBox(); self._dim.addItems(['3×3','4×4','5×5']); f1.addRow('Grid size:', self._dim)
+        self._custom = QLineEdit(); self._custom.setPlaceholderText('Paste Staridas labelled HEX, CSS, or JSON'); f1.addRow('Custom colors:', self._custom)
+        self._transpose = QCheckBox('Transpose axes (swap X ↔ Y)'); f1.addRow('', self._transpose); root.addWidget(g1)
 
         g2 = QGroupBox('Dimensions (mm)'); f2 = QFormLayout(g2)
-        self._cell_spin = QDoubleSpinBox()
-        self._cell_spin.setRange(4, 120); self._cell_spin.setSingleStep(1)
-        f2.addRow('Cell size:', self._cell_spin)
-        self._gap_spin = QDoubleSpinBox()
-        self._gap_spin.setRange(0, 20); self._gap_spin.setSingleStep(0.5)
-        f2.addRow('Gap:', self._gap_spin)
-        self._fit_chk = QCheckBox('Fit and center grid inside item')
-        self._fit_chk.setToolTip(
-            'Resize square cells automatically with the layout item.\n'
-            'Turn this off to use the fixed Cell size value.')
-        f2.addRow('', self._fit_chk)
-        root.addWidget(g2)
+        self._cell = QDoubleSpinBox(); self._cell.setRange(4,120); self._cell.setSingleStep(1); f2.addRow('Cell size:', self._cell)
+        self._gap = QDoubleSpinBox(); self._gap.setRange(0,20); self._gap.setSingleStep(.5); f2.addRow('Gap:', self._gap)
+        self._fit = QCheckBox('Fit and center grid inside item'); f2.addRow('', self._fit); root.addWidget(g2)
 
         g3 = QGroupBox('Labels'); f3 = QFormLayout(g3)
-        self._la = QLineEdit(); self._lb = QLineEdit()
-        f3.addRow('Variable A:', self._la); f3.addRow('Variable B:', self._lb)
-        self._show_lbl_chk = QCheckBox('Show axis labels (box only)')
-        self._show_cod_chk = QCheckBox('Show class codes on cells')
-        f3.addRow(self._show_lbl_chk); f3.addRow(self._show_cod_chk)
-        root.addWidget(g3)
+        self._la = QLineEdit(); self._lb = QLineEdit(); f3.addRow('Variable A:', self._la); f3.addRow('Variable B:', self._lb)
+        self._show_labels = QCheckBox('Show axis labels (box only)'); self._show_codes = QCheckBox('Show class codes on cells')
+        f3.addRow(self._show_labels); f3.addRow(self._show_codes); root.addWidget(g3)
 
         g4 = QGroupBox('Outline'); f4 = QFormLayout(g4)
-        self._out_btn = QPushButton(); self._out_btn.setFixedHeight(24)
-        f4.addRow('Color:', self._out_btn)
-        self._out_w = QDoubleSpinBox()
-        self._out_w.setRange(0, 5); self._out_w.setSingleStep(0.1)
-        f4.addRow('Width (mm):', self._out_w)
-        root.addWidget(g4)
-        root.addStretch()
+        self._outline = QPushButton(); self._outline.setFixedHeight(24); f4.addRow('Color:', self._outline)
+        self._outline_w = QDoubleSpinBox(); self._outline_w.setRange(0,5); self._outline_w.setSingleStep(.1); f4.addRow('Width (mm):', self._outline_w)
+        root.addWidget(g4); root.addStretch()
 
-        self._pal_combo.currentIndexChanged.connect(self._apply)
-        self._dim_combo.currentIndexChanged.connect(self._apply)
-        self._custom_edit.editingFinished.connect(self._apply)
-        self._transpose_chk.toggled.connect(self._apply)
-        self._cell_spin.valueChanged.connect(self._apply)
-        self._gap_spin.valueChanged.connect(self._apply)
-        self._fit_chk.toggled.connect(self._apply)
-        self._la.editingFinished.connect(self._apply)
-        self._lb.editingFinished.connect(self._apply)
-        self._show_lbl_chk.toggled.connect(self._apply)
-        self._show_cod_chk.toggled.connect(self._apply)
-        self._out_btn.clicked.connect(self._pick_color)
-        self._out_w.valueChanged.connect(self._apply)
+        self._source.currentIndexChanged.connect(self._source_changed); self._rescan.clicked.connect(self._rescan_sources)
+        for signal in (self._pal.currentIndexChanged, self._dim.currentIndexChanged, self._transpose.toggled,
+                       self._cell.valueChanged, self._gap.valueChanged, self._fit.toggled,
+                       self._show_labels.toggled, self._show_codes.toggled, self._outline_w.valueChanged):
+            signal.connect(self._apply)
+        self._custom.editingFinished.connect(self._apply); self._la.editingFinished.connect(self._apply); self._lb.editingFinished.connect(self._apply)
+        self._outline.clicked.connect(self._pick_color)
+
+    def _populate_sources(self):
+        current = self._item._linked_layer_id
+        self._source.blockSignals(True); self._source.clear()
+        self._source.addItem('Auto — detect from Print Layout map', SOURCE_AUTO)
+        self._source.addItem('Manual — use palette settings below', SOURCE_MANUAL)
+        for layer in _layout_layers(self._item.layout()):
+            kind = 'Raster' if isinstance(layer, QgsRasterLayer) else 'Vector'
+            suffix = ' • bivariate detected' if _detect(layer) else ''
+            self._source.addItem(f'{layer.name()} [{kind}]{suffix}', layer.id())
+        idx = self._source.findData(current)
+        self._source.setCurrentIndex(idx if idx >= 0 else (0 if current == SOURCE_AUTO else 1)); self._source.blockSignals(False)
 
     def _populate(self):
-        self._building = True
-        it = self._item
-        self._pal_combo.setCurrentIndex(it._pal_idx)
-        self._dim_combo.setCurrentIndex(it._dim - 3)
-        self._custom_edit.setText(it._custom)
-        self._transpose_chk.setChecked(it._transposed)
-        self._cell_spin.setValue(it._cell_size)
-        self._gap_spin.setValue(it._gap)
-        self._fit_chk.setChecked(it._fit_to_item)
-        self._la.setText(it._label_a); self._lb.setText(it._label_b)
-        self._show_lbl_chk.setChecked(it._show_labels)
-        self._show_cod_chk.setChecked(it._show_codes)
-        self._set_btn_color(it._outline_hex)
-        self._out_w.setValue(it._outline_w)
-        self._building = False
+        self._building = True; it = self._item; self._populate_sources()
+        self._pal.setCurrentIndex(it._pal_idx); self._dim.setCurrentIndex(it._dim-3); self._custom.setText(it._custom)
+        self._transpose.setChecked(it._transposed); self._cell.setValue(it._cell_size); self._gap.setValue(it._gap); self._fit.setChecked(it._fit_to_item)
+        self._la.setText(it._label_a); self._lb.setText(it._label_b); self._show_labels.setChecked(it._show_labels); self._show_codes.setChecked(it._show_codes)
+        self._set_outline(it._outline_hex); self._outline_w.setValue(it._outline_w); self._building = False; self._update_status()
 
-    def _set_btn_color(self, hex_c):
-        self._out_btn.setStyleSheet(
-            f'background:{hex_c};border:1px solid #888;border-radius:3px')
-        self._out_btn.setText(hex_c)
+    def _update_status(self):
+        sid = self._item._linked_layer_id
+        if sid == SOURCE_MANUAL:
+            self._status.setText('Manual palette'); self._enable_palette(True); return
+        layer = _source_layer(self._item.layout(), sid); detected = _detect(layer)
+        if detected:
+            _, dim = detected; kind = 'raster' if isinstance(layer, QgsRasterLayer) else 'vector'
+            self._status.setText(f'Detected {dim}×{dim} {kind}: {layer.name()}'); self._enable_palette(False)
+        else:
+            self._status.setText('No bivariate raster/vector style detected; manual palette is used.'); self._enable_palette(True)
+
+    def _enable_palette(self, enabled):
+        for w in (self._pal, self._dim, self._custom, self._transpose): w.setEnabled(enabled)
+
+    def _rescan_sources(self):
+        if self._building: return
+        chosen = self._source.currentData() or SOURCE_AUTO; self._item._linked_layer_id = chosen
+        self._populate_sources(); self._update_status(); self._item.refresh()
+
+    def _source_changed(self):
+        if self._building: return
+        self._item._linked_layer_id = self._source.currentData() or SOURCE_AUTO; self._update_status(); self._item.refresh()
+
+    def _set_outline(self, color):
+        self._outline.setStyleSheet(f'background:{color};border:1px solid #888;border-radius:3px'); self._outline.setText(color)
 
     def _pick_color(self):
         c = QColorDialog.getColor(QColor(self._item._outline_hex), self)
-        if c.isValid():
-            self._item._outline_hex = c.name()
-            self._set_btn_color(c.name())
-            self._item.refresh()
+        if c.isValid(): self._item._outline_hex = c.name(); self._set_outline(c.name()); self._item.refresh()
 
     def _apply(self):
-        if self._building:
-            return
+        if self._building: return
         it = self._item
-        it._pal_idx     = self._pal_combo.currentIndex()
-        it._dim         = self._dim_combo.currentIndex() + 3
-        it._custom      = self._custom_edit.text()
-        it._transposed  = self._transpose_chk.isChecked()
-        it._cell_size   = self._cell_spin.value()
-        it._gap         = self._gap_spin.value()
-        it._fit_to_item = self._fit_chk.isChecked()
-        it._label_a     = self._la.text()
-        it._label_b     = self._lb.text()
-        it._show_labels = self._show_lbl_chk.isChecked()
-        it._show_codes  = self._show_cod_chk.isChecked()
-        it._outline_w   = self._out_w.value()
-        it.refresh()
+        it._pal_idx = self._pal.currentIndex(); it._dim = self._dim.currentIndex()+3; it._custom = self._custom.text(); it._transposed = self._transpose.isChecked()
+        it._cell_size = self._cell.value(); it._gap = self._gap.value(); it._fit_to_item = self._fit.isChecked(); it._label_a = self._la.text(); it._label_b = self._lb.text()
+        it._show_labels = self._show_labels.isChecked(); it._show_codes = self._show_codes.isChecked(); it._outline_w = self._outline_w.value(); it.refresh()
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Core Metadata  (QgsLayoutItemAbstractMetadata)
-# Registered via: QgsApplication.layoutItemRegistry().addLayoutItemType(...)
-# ─────────────────────────────────────────────────────────────────────────────
 
 class BivariateBoxLegendMetadata(QgsLayoutItemAbstractMetadata):
-    def __init__(self):
-        super().__init__(TYPE_BOX,
-                         QCoreApplication.translate('BivariatePlugin', 'Bivariate Box Legend'))
-    def createItem(self, layout):
-        return BivariateBoxLegendItem(layout)
+    def __init__(self): super().__init__(TYPE_BOX, QCoreApplication.translate('BivariatePlugin', 'Bivariate Box Legend'))
+    def createItem(self, layout): return BivariateBoxLegendItem(layout)
 
 
 class BivariateDiamondLegendMetadata(QgsLayoutItemAbstractMetadata):
-    def __init__(self):
-        super().__init__(TYPE_DIAMOND,
-                         QCoreApplication.translate('BivariatePlugin', 'Bivariate Diamond Legend'))
-    def createItem(self, layout):
-        return BivariateDiamondLegendItem(layout)
+    def __init__(self): super().__init__(TYPE_DIAMOND, QCoreApplication.translate('BivariatePlugin', 'Bivariate Diamond Legend'))
+    def createItem(self, layout): return BivariateDiamondLegendItem(layout)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# GUI Metadata  (QgsLayoutItemAbstractGuiMetadata)   ← KEY CLASS
-# Registered via: QgsGui.layoutItemGuiRegistry().addLayoutItemGuiMetadata(...)
-# This is what makes the icon appear in the Add-Item toolbar/menu.
-# ─────────────────────────────────────────────────────────────────────────────
 
 class BivariateBoxLegendGuiMetadata(QgsLayoutItemAbstractGuiMetadata):
-    def __init__(self):
-        super().__init__(TYPE_BOX,
-                         QCoreApplication.translate('BivariatePlugin', 'Bivariate Box Legend'))
-
-    def creationIcon(self):             # ← must be creationIcon, NOT icon
-        colors = list(PALETTES.values())[6]
-        return _make_icon(colors, diamond=False, size=24)
-
-    def createItemWidget(self, item):
-        return BivariatePropertiesWidget(None, item)
+    def __init__(self): super().__init__(TYPE_BOX, QCoreApplication.translate('BivariatePlugin', 'Bivariate Box Legend'))
+    def creationIcon(self): return _icon(list(PALETTES.values())[6], False, 24)
+    def createItemWidget(self, item): return BivariatePropertiesWidget(None, item)
 
 
 class BivariateDiamondLegendGuiMetadata(QgsLayoutItemAbstractGuiMetadata):
-    def __init__(self):
-        super().__init__(TYPE_DIAMOND,
-                         QCoreApplication.translate('BivariatePlugin', 'Bivariate Diamond Legend'))
-
-    def creationIcon(self):             # ← must be creationIcon, NOT icon
-        colors = list(PALETTES.values())[6]
-        return _make_icon(colors, diamond=True, size=24)
-
-    def createItemWidget(self, item):
-        return BivariatePropertiesWidget(None, item)
+    def __init__(self): super().__init__(TYPE_DIAMOND, QCoreApplication.translate('BivariatePlugin', 'Bivariate Diamond Legend'))
+    def creationIcon(self): return _icon(list(PALETTES.values())[6], True, 24)
+    def createItemWidget(self, item): return BivariatePropertiesWidget(None, item)
