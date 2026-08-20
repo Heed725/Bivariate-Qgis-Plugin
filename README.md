@@ -51,6 +51,56 @@ The tools appear under **Processing Toolbox → Bivariate QGIS Plugin → Cartog
 
 Classifies two numeric vector attributes into a 3×3, 4×4 or 5×5 bivariate class field.
 
+The vector classifier uses a fixed axis convention:
+
+| Processing input | Axis | Class direction |
+|---|---|---|
+| **Variable 1** | **Y axis / vertical** | `1 → 3` for a 3×3 grid, from low to high |
+| **Variable 2** | **X axis / horizontal** | `A → C` for a 3×3 grid, from low to high |
+
+The output `Bi_Class` code is written as **Variable 2 letter first + Variable 1 number second**. For example, `C3` means the highest class of Variable 2 and the highest class of Variable 1.
+
+### Example: Rainfall as Variable 1 and Temperature as Variable 2
+
+Suppose you choose:
+
+- **Variable 1 = Rainfall**
+- **Variable 2 = Temperature**
+- **Grid size = 3×3**
+
+The plugin places **Rainfall on the Y axis** and **Temperature on the X axis**:
+
+```text
+                         RAINFALL — Variable 1 (Y)
+                                  ↑
+High rainfall (3)       A3        B3        C3
+Mid rainfall  (2)       A2        B2        C2
+Low rainfall  (1)       A1        B1        C1
+                         └─────────┬─────────┘
+                    Low temp    Mid temp    High temp   → TEMPERATURE
+                       (A)         (B)         (C)        Variable 2 (X)
+```
+
+So the corner classes mean:
+
+| Class | Meaning |
+|---|---|
+| `A1` | Low temperature + low rainfall |
+| `C1` | High temperature + low rainfall |
+| `A3` | Low temperature + high rainfall |
+| `C3` | High temperature + high rainfall |
+
+For larger grids the same rule is preserved: **Variable 1 remains vertical/Y** and **Variable 2 remains horizontal/X**. A 4×4 grid uses `1–4` vertically and `A–D` horizontally; a 5×5 grid uses `1–5` vertically and `A–E` horizontally.
+
+#### Print Layout labels for this example
+
+In the **Bivariate Box Legend** properties, the current label fields use **Variable A** for the horizontal/X label and **Variable B** for the vertical/Y label. Therefore, for this Rainfall/Temperature example enter:
+
+- **Variable A = Temperature (°C)** — X axis
+- **Variable B = Rainfall (mm)** — Y axis
+
+If **Transpose axes (swap X ↔ Y)** is enabled in manual mode, the displayed axes are swapped.
+
 ### Apply Bivariate Color Scheme (Vector)
 
 Applies one of the built-in or imported palettes to a categorized vector layer. The styled layer stores its bivariate dimension and palette metadata so Print Layout legends can identify it reliably.
