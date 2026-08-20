@@ -244,9 +244,23 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._linked_layer_id = el.attribute('linkedLayer', SOURCE_MANUAL) if el.hasAttribute('linkedLayer') else SOURCE_MANUAL
         return True
 
+    def _linked_source(self):
+        if self._linked_layer_id == SOURCE_MANUAL:
+            return None
+        return _source_layer(self.layout(), self._linked_layer_id)
+
+    def _source_kind(self):
+        layer = self._linked_source()
+        if isinstance(layer, QgsVectorLayer):
+            return 'vector'
+        if isinstance(layer, QgsRasterLayer):
+            return 'raster'
+        # Manual/legacy legends keep their historical numeric class codes.
+        return 'raster'
+
     def _legend_data(self):
         if self._linked_layer_id != SOURCE_MANUAL:
-            detected = _detect(_source_layer(self.layout(), self._linked_layer_id))
+            detected = _detect(self._linked_source())
             if detected:
                 return detected
         return _resolve_manual(self._pal_idx, self._custom, self._dim, self._transposed), self._dim
@@ -267,6 +281,7 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
         scale = ctx.renderContext().scaleFactor()
         iw, ih = self.rect().width() * scale, self.rect().height() * scale
         colors, dim = self._legend_data()
+        source_kind = self._source_kind()
         gap = self._gap * scale
         if self._fit_to_item:
             label_cells = .72 if self._show_labels else 0
@@ -279,12 +294,15 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
         ml = max(0, (iw - grid - label_space) / 2) + label_space
         mt = max(0, (ih - grid - label_space) / 2)
         pen = self._pen()
-        codes = class_codes(dim, vector=False)
         cf = QFont(); cf.setBold(True); cf.setPointSizeF(max(4, (cs / scale) * .22))
         for row in range(dim):
             for col in range(dim):
-                code = f'{col+1}{dim-row}'
-                idx = codes.index(code)
+                y_class = dim - row
+                idx = col * dim + (y_class - 1)
+                if source_kind == 'vector':
+                    code = f'{chr(65 + col)}{y_class}'
+                else:
+                    code = f'{col + 1}{y_class}'
                 x, y = ml + col * step, mt + row * step
                 p.fillRect(QRectF(x, y, cs, cs), QBrush(QColor(colors[idx])))
                 p.setPen(pen); p.drawRect(QRectF(x, y, cs, cs))
@@ -311,6 +329,7 @@ class BivariateDiamondLegendItem(_BivariateBaseItem):
         scale = ctx.renderContext().scaleFactor()
         iw, ih = self.rect().width() * scale, self.rect().height() * scale
         colors, dim = self._legend_data()
+        source_kind = self._source_kind()
         cs, gap = self._cell_size * scale, self._gap * scale
         step = cs + gap; half = cs / 2 * math.sqrt(2); a45 = math.radians(45)
         def raw(row, col):
@@ -319,11 +338,16 @@ class BivariateDiamondLegendItem(_BivariateBaseItem):
         min_x, max_x = min(x for x, _ in pts)-half, max(x for x, _ in pts)+half
         min_y, max_y = min(y for _, y in pts)-half, max(y for _, y in pts)+half
         ox, oy = -min_x + (iw-(max_x-min_x))/2, -min_y + (ih-(max_y-min_y))/2
-        codes = class_codes(dim, vector=False); pen = self._pen()
+        pen = self._pen()
         cf = QFont(); cf.setBold(True); cf.setPointSizeF(max(4, self._cell_size * .22))
         for row in range(dim):
             for col in range(dim):
-                code = f'{col+1}{row+1}'; idx = codes.index(code); rx, ry = raw(row, col); cx, cy = rx+ox, ry+oy
+                idx = col * dim + row
+                if source_kind == 'vector':
+                    code = f'{chr(65 + col)}{row + 1}'
+                else:
+                    code = f'{col + 1}{row + 1}'
+                rx, ry = raw(row, col); cx, cy = rx+ox, ry+oy
                 path = QPainterPath(); path.moveTo(cx, cy-half); path.lineTo(cx+half, cy); path.lineTo(cx, cy+half); path.lineTo(cx-half, cy); path.closeSubpath()
                 p.fillPath(path, QBrush(QColor(colors[idx]))); p.setPen(pen); p.drawPath(path)
                 if self._show_codes:
@@ -405,7 +429,8 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         layer = _source_layer(self._item.layout(), sid); detected = _detect(layer)
         if detected:
             _, dim = detected; kind = 'raster' if isinstance(layer, QgsRasterLayer) else 'vector'
-            self._status.setText(f'Detected {dim}×{dim} {kind}: {layer.name()} • X = Variable 2, Y = Variable 1'); self._enable_palette(False)
+            code_note = 'A1…' if kind == 'vector' else '11…'
+            self._status.setText(f'Detected {dim}×{dim} {kind}: {layer.name()} • X = Variable 2, Y = Variable 1 • codes {code_note}'); self._enable_palette(False)
         else:
             self._status.setText('No bivariate raster/vector style detected; manual palette is used.'); self._enable_palette(True)
 
