@@ -18,6 +18,12 @@ deprecated=False
 hasProcessingProvider=yes
 
 changelog=0.0.4
+    - Print Layout Box and Diamond legends can now auto-sense bivariate raster
+      or vector layers actually rendered by layout map items.
+    - Added a Source layer selector with Auto, Manual and explicit raster/vector
+      choices plus a Rescan layout action and detection status.
+    - Plugin styling tools now store lightweight palette metadata on styled
+      layers for reliable 3x3, 4x4 and 5x5 Print Layout legend detection.
     - Added selectable 3x3, 4x4 and 5x5 grids across vector classification,
       raster classification, styling, Print Layout legends and Leaflet export.
     - Added Staridas palette detection for labelled HEX lines, CSS variables
