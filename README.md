@@ -3,14 +3,21 @@
 **Bivariate choropleth mapping for QGIS with 3×3, 4×4 and 5×5 vector/raster classification, Staridas palette import, Leaflet export, and native Print Layout legends.**
 
 [![QGIS](https://img.shields.io/badge/QGIS-3.16%2B-green?style=flat&logo=qgis&logoColor=white)](https://qgis.org)
-[![Version](https://img.shields.io/badge/version-0.0.4-orange?style=flat)](https://github.com/Heed725/Bivariate-Qgis-Plugin)
+[![Version](https://img.shields.io/badge/version-0.0.5-orange?style=flat)](https://github.com/Heed725/Bivariate-Qgis-Plugin/releases/tag/0.0.5)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 
-> Made by [Hemed Lungo](https://github.com/Heed725) · Version **0.0.4** · QGIS ≥ 3.16
+> Made by [Hemed Lungo](https://github.com/Heed725) · Version **0.0.5** · QGIS ≥ 3.16
 
-## Version 0.0.4
+## Version 0.0.5
 
-This release keeps the version at **0.0.4** and adds automatic Print Layout layer sensing plus a single axis convention shared by the map and the Print Layout legend.
+This release adds two Print Layout legend styles derived automatically from the selected or detected bivariate box colours:
+
+- **Bivariate Box + Variable Ramps Legend** — the complete matrix with two low-to-high component strips above it.
+- **Bivariate Variable Ramps Legend** — the two compact component strips without the matrix.
+
+Both styles work with 3×3, 4×4 and 5×5 palettes. Palette selectors in vector, raster, Leaflet and Print Layout workflows now display a small colour-grid preview to the left of every palette name. The Processing previews use QGIS native enum icon metadata, avoiding the abstract widget-wrapper errors reported on QGIS 3.40.
+
+It retains the automatic Print Layout layer sensing and single axis convention introduced in 0.0.4:
 
 - **Variable 1 is always Y / vertical.**
 - **Variable 2 is always X / horizontal.**
@@ -27,19 +34,21 @@ This release keeps the version at **0.0.4** and adds automatic Print Layout laye
 
 ## Main features
 
-- 30 built-in bivariate colour palettes.
+- 29 built-in bivariate colour palettes.
+- Colour-grid previews beside palette names throughout the plugin.
 - 3×3, 4×4 and 5×5 bivariate classification.
 - Staridas labelled HEX, CSS and JSON palette import.
 - Vector bivariate classification and styling.
 - Raster bivariate generation and QML styling.
 - Native QGIS Print Layout **Box Legend** and **Diamond Legend** items.
+- Native **Box + Variable Ramps** and compact **Variable Ramps** legend items.
 - Automatic raster/vector sensing in Print Layout.
 - Transpose axes option for manual legend/palette workflows.
 - Standalone Leaflet HTML export.
 
 ## Installation
 
-1. Download the `0.0.4` plugin ZIP from the GitHub release.
+1. Download `bivariate_plugin-0.0.5.zip` from the [0.0.5 GitHub release](https://github.com/Heed725/Bivariate-Qgis-Plugin/releases/tag/0.0.5).
 2. Open **QGIS → Plugins → Manage and Install Plugins**.
 3. Choose **Install from ZIP**.
 4. Select the ZIP and install it.
@@ -146,6 +155,8 @@ Exports a classified vector layer to a standalone interactive Leaflet HTML map.
 1. Add your styled bivariate raster or vector layer to the QGIS project.
 2. Open a **Print Layout** and add a map item containing that layer.
 3. Choose **Add Item → Bivariate Box Legend** or **Bivariate Diamond Legend**.
+   You can also choose **Bivariate Box + Variable Ramps Legend** or
+   **Bivariate Variable Ramps Legend** for the two new styles.
 4. In **Item Properties → Print Layout layer sensing**, keep **Auto — detect from Print Layout map** or choose a specific source layer.
 5. Use **Rescan layout** after changing the map's layer set or symbology.
 6. The detected legend uses the same class colours and class positions as the map layer.
@@ -200,6 +211,7 @@ __init__.py
 plugin_core.py
 metadata.txt
 palettes.py
+palette_widgets.py
 bivariate_provider.py
 bivariate_choropleth.py
 apply_bivariate_colors.py
@@ -231,4 +243,4 @@ GNU General Public License v2.0 or later.
 
 ---
 
-**Bivariate QGIS Plugin · v0.0.4 · Hemed Lungo**
+**Bivariate QGIS Plugin · v0.0.5 · Hemed Lungo**

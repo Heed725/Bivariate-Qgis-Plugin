@@ -1,0 +1,56 @@
+name: Package and publish plugin 0.0.5
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Package QGIS plugin
+        shell: bash
+        run: |
+          mkdir -p package/bivariate_plugin
+          cp LICENSE README.md __init__.py apply_bivariate_colors.py \
+            bivariate_choropleth.py bivariate_export_leaflet.py \
+            bivariate_legend_box_generator.py bivariate_legend_diamond_generator.py \
+            bivariate_provider.py bivariate_raster_generator.py \
+            bivariate_style_generator.py icon.png layout_items.py metadata.txt \
+            palette_widgets.py palettes.py plugin_core.py package/bivariate_plugin/
+          cd package
+          zip -r ../bivariate_plugin-0.0.5.zip bivariate_plugin
+
+      - name: Validate package
+        shell: bash
+        run: |
+          unzip -t bivariate_plugin-0.0.5.zip
+          unzip -p bivariate_plugin-0.0.5.zip bivariate_plugin/metadata.txt | \
+            grep -q '^version=0.0.5$'
+          unzip -l bivariate_plugin-0.0.5.zip | \
+            grep -q 'bivariate_plugin/palette_widgets.py'
+
+      - name: Publish or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          notes='Adds colour-grid previews beside palette names across vector, raster, Leaflet and Print Layout workflows; fixes QGIS 3.40 Processing widget errors and stale imports; and adds Box + Variable Ramps and compact Variable Ramps Print Layout legends for 3x3, 4x4 and 5x5 palettes.'
+          if gh release view 0.0.5 >/dev/null 2>&1; then
+            gh release edit 0.0.5 \
+              --title 'Bivariate QGIS Plugin 0.0.5' \
+              --notes "$notes"
+            gh release upload 0.0.5 bivariate_plugin-0.0.5.zip --clobber
+          else
+            gh release create 0.0.5 bivariate_plugin-0.0.5.zip \
+              --target main \
+              --title 'Bivariate QGIS Plugin 0.0.5' \
+              --notes "$notes"
+          fi

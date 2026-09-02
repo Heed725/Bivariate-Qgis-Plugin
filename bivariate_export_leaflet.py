@@ -9,9 +9,8 @@ Exports a bivariate-classified vector layer to a fully-styled standalone Leaflet
 - Dark/light theme switch
 - Search bar, fullscreen, zoom controls
 """
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from palettes import PALETTES, class_codes, palette_colors
+from .palettes import PALETTES, class_codes, palette_colors
+from .palette_widgets import make_palette_parameter
 
 
 from qgis.PyQt.QtCore import QCoreApplication
@@ -28,7 +27,7 @@ from qgis.core import (
     QgsCoordinateTransform,
     QgsProject,
 )
-import json, sys, os
+import json
 
 PALETTE_NAMES   = list(PALETTES.keys()) + ['Custom / Staridas import']
 BASEMAPS = [
@@ -102,7 +101,7 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
             self.EXTRA_FIELDS,
             self.tr('Extra popup fields (comma-separated field names, leave blank for all)'),
             optional=True))
-        self.addParameter(QgsProcessingParameterEnum(
+        self.addParameter(make_palette_parameter(
             self.PALETTE, self.tr('Color palette'),
             options=PALETTE_NAMES, defaultValue=6))
         self.addParameter(QgsProcessingParameterEnum(

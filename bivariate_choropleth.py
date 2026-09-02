@@ -3,9 +3,7 @@ QGIS Processing Script: Bivariate Choropleth Map Generator
 Creates bivariate choropleth classification based on two numeric fields.
 Methodology: Joshua Stevens (https://www.joshuastevens.net/cartography/make-a-bivariate-choropleth-map/)
 """
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from palettes import PALETTES, CODE_LABELS
+from .palettes import PALETTES, CODE_LABELS
 
 
 from qgis.core import (

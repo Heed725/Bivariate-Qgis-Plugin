@@ -1,11 +1,11 @@
 """
 QGIS Processing Script: Bivariate Style Generator
 Creates a QML style file for bivariate rasters (values 11-33).
-Supports all 30 built-in palettes or custom 9-color hex input.
+Supports all 29 built-in palettes or custom 9-color hex input.
 """
-import os as _os, sys as _sys, json as _json
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from palettes import PALETTES, class_codes, code_label, palette_colors, transpose_palette
+import json as _json
+from .palettes import PALETTES, class_codes, code_label, palette_colors, transpose_palette
+from .palette_widgets import make_palette_parameter
 
 
 from qgis.PyQt.QtCore import QCoreApplication
@@ -18,7 +18,7 @@ from qgis.core import (
     QgsProcessingParameterBoolean,
     QgsProcessingException,
 )
-import processing, sys, os
+import processing
 
 PALETTE_NAMES = list(PALETTES.keys()) + ['Custom / Staridas import']
 
@@ -64,13 +64,14 @@ class BivariateStyleGenerator(QgsProcessingAlgorithm):
     def shortHelpString(self):
         return self.tr(
             'Creates a QML color style file for bivariate rasters (values 11–33).\n\n'
-            'Choose from 30 built-in palettes or supply custom hex codes.\n'
+            'Choose from 29 built-in palettes or supply custom hex codes.\n'
+            'A 3×3 preview appears beside every palette name (v0.0.6).\n'
             'Can auto-apply the style to your input raster layer.')
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterRasterLayer(
             self.INPUT_RASTER, self.tr('Input bivariate raster (values 11-33)'), optional=True))
-        self.addParameter(QgsProcessingParameterEnum(
+        self.addParameter(make_palette_parameter(
             self.PALETTE_CHOICE, self.tr('Color palette'),
             options=PALETTE_NAMES, defaultValue=6))
         self.addParameter(QgsProcessingParameterEnum(

@@ -1,11 +1,11 @@
 """
 QGIS Processing Script: Apply Bivariate Color Scheme
 Applies a bivariate color scheme to a layer that already has a Bi_Class field.
-Supports all 30 built-in palettes or custom 9-color hex input.
+Supports all 29 built-in palettes or custom 9-color hex input.
 """
-import os as _os, sys as _sys, json as _json
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from palettes import PALETTES, class_codes, palette_colors, transpose_palette
+import json as _json
+from .palettes import PALETTES, class_codes, palette_colors, transpose_palette
+from .palette_widgets import make_palette_parameter
 
 
 from qgis.core import (
@@ -43,7 +43,7 @@ class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
             self.CLASS_FIELD, 'Bivariate class field',
             parentLayerParameterName=self.INPUT,
             defaultValue='Bi_Class'))
-        self.addParameter(QgsProcessingParameterEnum(
+        self.addParameter(make_palette_parameter(
             self.PALETTE_CHOICE, 'Color palette',
             options=PALETTE_NAMES,
             defaultValue=6))  # DkBlue

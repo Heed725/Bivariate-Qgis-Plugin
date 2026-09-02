@@ -2,7 +2,7 @@
 name=Bivariate QGIS Plugin
 qgisMinimumVersion=3.16
 description=Bivariate mapping suite with selectable 3x3, 4x4 and 5x5 classification, Staridas palette import, vector/raster styling, legends and Leaflet export.
-version=0.0.4
+version=0.0.5
 author=Hemed Lungo
 email=hemedlungo@gmail.com
 about=Provides Processing tools for bivariate choropleth mapping plus custom Print Layout legends. Staridas palette import integration credits Spiros Staridas, creator of the Staridas Geography Bivariate Color Palette Builder.
@@ -17,7 +17,20 @@ experimental=False
 deprecated=False
 hasProcessingProvider=yes
 
-changelog=0.0.4
+changelog=0.0.5
+    - Added Bivariate Box + Variable Ramps Legend to Print Layout, combining
+      the square bivariate matrix with two low-to-high component color strips.
+    - Added Bivariate Variable Ramps Legend for the compact two-strip layout.
+    - Both new legends support detected vector/raster styles, manual palettes,
+      3x3, 4x4 and 5x5 grids, transposition and editable variable labels.
+    - Replaced the failed abstract custom widget with QGIS's native enum icons
+      metadata, fixing the QComboBox parameterDefinition and abstract
+      setWidgetValue warnings on QGIS 3.40.
+    - Changed all Processing modules to package-relative imports so QGIS does
+      not reuse stale top-level modules after a plugin upgrade or reload.
+    - Added 3x3 color-grid thumbnails to the left of every built-in palette
+      name in vector, raster, Leaflet and Print Layout palette selectors.
+  0.0.4
     - Unified map and Print Layout axes: Variable 1 is Y/vertical and Variable 2
       is X/horizontal everywhere in the plugin.
     - Raster bivariate codes now use X first, Y second: Raster B/Variable 2 is

@@ -1,16 +1,13 @@
-import os, sys
-_dir = os.path.dirname(os.path.abspath(__file__))
-if _dir not in sys.path:
-    sys.path.insert(0, _dir)
+import os
 
 from qgis.core import QgsProcessingProvider
 from qgis.PyQt.QtGui import QIcon
 
-from bivariate_choropleth    import BivariateChoroplethAlgorithm
-from apply_bivariate_colors  import ApplyBivariateColorsAlgorithm
-from bivariate_raster_generator import BivariateRasterGenerator
-from bivariate_style_generator  import BivariateStyleGenerator
-from bivariate_export_leaflet   import BivariateLeafletExporter
+from .bivariate_choropleth import BivariateChoroplethAlgorithm
+from .apply_bivariate_colors import ApplyBivariateColorsAlgorithm
+from .bivariate_raster_generator import BivariateRasterGenerator
+from .bivariate_style_generator import BivariateStyleGenerator
+from .bivariate_export_leaflet import BivariateLeafletExporter
 # Legend box/diamond generators are NOT registered here —
 # they are only available as Print Layout items.
 

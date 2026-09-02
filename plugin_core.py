@@ -1,18 +1,17 @@
-import os, sys
-_dir = os.path.dirname(os.path.abspath(__file__))
-if _dir not in sys.path:
-    sys.path.insert(0, _dir)
-
 from qgis.core import QgsApplication
 from qgis.gui  import QgsGui
 
 from .bivariate_provider import BivariateProvider
 from .layout_items import (
-    TYPE_BOX, TYPE_DIAMOND,
+    TYPE_BOX, TYPE_DIAMOND, TYPE_BOX_RAMPS, TYPE_RAMPS,
     BivariateBoxLegendMetadata,
     BivariateDiamondLegendMetadata,
+    BivariateBoxRampsLegendMetadata,
+    BivariateRampsLegendMetadata,
     BivariateBoxLegendGuiMetadata,
     BivariateDiamondLegendGuiMetadata,
+    BivariateBoxRampsLegendGuiMetadata,
+    BivariateRampsLegendGuiMetadata,
 )
 
 
@@ -23,8 +22,12 @@ class BivariatePlugin:
         self.provider = None
         self.box_item_metadata         = None
         self.diamond_item_metadata     = None
+        self.box_ramps_item_metadata   = None
+        self.ramps_item_metadata       = None
         self.box_item_gui_metadata     = None
         self.diamond_item_gui_metadata = None
+        self.box_ramps_item_gui_metadata = None
+        self.ramps_item_gui_metadata     = None
 
         # ── Core registry: guard against duplicate (plugin reload) ────────
         core_reg = QgsApplication.layoutItemRegistry()
@@ -34,6 +37,12 @@ class BivariatePlugin:
         if core_reg.itemMetadata(TYPE_DIAMOND) is None:
             self.diamond_item_metadata = BivariateDiamondLegendMetadata()
             core_reg.addLayoutItemType(self.diamond_item_metadata)
+        if core_reg.itemMetadata(TYPE_BOX_RAMPS) is None:
+            self.box_ramps_item_metadata = BivariateBoxRampsLegendMetadata()
+            core_reg.addLayoutItemType(self.box_ramps_item_metadata)
+        if core_reg.itemMetadata(TYPE_RAMPS) is None:
+            self.ramps_item_metadata = BivariateRampsLegendMetadata()
+            core_reg.addLayoutItemType(self.ramps_item_metadata)
 
     def initProcessing(self):
         self.provider = BivariateProvider()
@@ -57,9 +66,20 @@ class BivariatePlugin:
             gui_reg.addLayoutItemGuiMetadata(self.diamond_item_gui_metadata)
             _mark_gui_registered(TYPE_DIAMOND)
 
+        if not _gui_registered(TYPE_BOX_RAMPS):
+            self.box_ramps_item_gui_metadata = BivariateBoxRampsLegendGuiMetadata()
+            gui_reg.addLayoutItemGuiMetadata(self.box_ramps_item_gui_metadata)
+            _mark_gui_registered(TYPE_BOX_RAMPS)
+
+        if not _gui_registered(TYPE_RAMPS):
+            self.ramps_item_gui_metadata = BivariateRampsLegendGuiMetadata()
+            gui_reg.addLayoutItemGuiMetadata(self.ramps_item_gui_metadata)
+            _mark_gui_registered(TYPE_RAMPS)
+
     def unload(self):
         if self.provider:
             QgsApplication.processingRegistry().removeProvider(self.provider)
+            self.provider = None
         # Mark GUI slots as unregistered so next load re-registers cleanly.
         # (QgsLayoutItemGuiRegistry has no PyQGIS remove API — entries persist
         # until QGIS restarts, but the guard prevents accumulation.)

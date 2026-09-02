@@ -1,4 +1,4 @@
-"""Native QGIS Print Layout items for bivariate box/diamond legends."""
+"""Native QGIS Print Layout items for bivariate box, ramp and diamond legends."""
 import json
 import math
 import re
@@ -19,10 +19,13 @@ from qgis.core import (
 from qgis.gui import QgsLayoutItemAbstractGuiMetadata, QgsLayoutItemBaseWidget
 
 from .palettes import PALETTES, class_codes, palette_colors, transpose_palette
+from .palette_widgets import populate_palette_combo
 
 PLUGIN_BASE = QgsLayoutItemRegistry.PluginItem
 TYPE_BOX = PLUGIN_BASE + 1338
 TYPE_DIAMOND = PLUGIN_BASE + 1339
+TYPE_BOX_RAMPS = PLUGIN_BASE + 1340
+TYPE_RAMPS = PLUGIN_BASE + 1341
 PALETTE_NAMES = list(PALETTES.keys()) + ['Custom / Staridas import']
 SOURCE_AUTO = '__AUTO__'
 SOURCE_MANUAL = '__MANUAL__'
@@ -189,6 +192,73 @@ def _icon(colors, diamond=False, size=24):
     return QIcon(px)
 
 
+def _component_colors(colors, dim):
+    """Return Y and X low-to-high component ramps from an X-major palette."""
+    y_colors = [colors[y] for y in range(dim)]
+    x_colors = [colors[x * dim] for x in range(dim)]
+    return y_colors, x_colors
+
+
+def _display_axis_labels(item):
+    """Return labels for the currently displayed X and Y palette directions."""
+    if item._transposed and item._linked_layer_id == SOURCE_MANUAL:
+        return item._label_b, item._label_a
+    return item._label_a, item._label_b
+
+
+def _draw_component_ramps(painter, colors, dim, x, y, width, bar_height,
+                          row_gap, segment_gap, labels, label_width, font, pen):
+    """Draw Y then X component strips, matching the supplied bivariate box."""
+    y_colors, x_colors = _component_colors(colors, dim)
+    segment_width = max(1.0, (width - (dim - 1) * segment_gap) / dim)
+    painter.setFont(font)
+    for row, (ramp, label) in enumerate(((y_colors, labels[1]), (x_colors, labels[0]))):
+        top = y + row * (bar_height + row_gap)
+        for index, color in enumerate(ramp):
+            left = x + index * (segment_width + segment_gap)
+            rect = QRectF(left, top, segment_width, bar_height)
+            painter.fillRect(rect, QBrush(QColor(color)))
+            if pen is not None:
+                painter.setPen(pen)
+                painter.drawRect(rect)
+        if label_width > 0:
+            painter.setPen(QPen(QColor('#444444')))
+            painter.drawText(
+                QRectF(x + width + row_gap, top - bar_height * .22,
+                       label_width, bar_height * 1.45),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                label,
+            )
+
+
+def _ramps_icon(colors, with_box=False, size=24):
+    """Create toolbar icons for the compact and box-plus-ramps items."""
+    px = QPixmap(size, size)
+    px.fill(Qt.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.Antialiasing, False)
+    y_colors, x_colors = _component_colors(colors, 3)
+    gap = 1.0
+    bar_h = max(2.0, size * .12)
+    top = 1.0
+    bar_w = size * (.62 if with_box else .95)
+    seg_w = (bar_w - 2 * gap) / 3
+    for row, ramp in enumerate((y_colors, x_colors)):
+        for col, color in enumerate(ramp):
+            p.fillRect(QRectF(col * (seg_w + gap), top + row * (bar_h + gap),
+                              seg_w, bar_h), QBrush(QColor(color)))
+    if with_box:
+        grid_top = top + 2 * (bar_h + gap) + 1
+        cell = max(2.0, min((size - grid_top - 1) / 3, bar_w / 3))
+        for row in range(3):
+            for col in range(3):
+                idx = col * 3 + (2 - row)
+                p.fillRect(QRectF(col * cell, grid_top + row * cell, cell, cell),
+                           QBrush(QColor(colors[idx])))
+    p.end()
+    return QIcon(px)
+
+
 class _BivariateBaseItem(QgsLayoutItem):
     def __init__(self, layout):
         super().__init__(layout)
@@ -319,6 +389,128 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
         p.restore()
 
 
+class BivariateBoxRampsLegendItem(_BivariateBaseItem):
+    """Bivariate box with the two source-variable color strips above it."""
+
+    def __init__(self, layout):
+        super().__init__(layout)
+        self._show_labels = True
+        try:
+            self.attemptResize(QgsLayoutSize(90, 90, QgsUnitTypes.LayoutMillimeters))
+        except Exception:
+            pass
+
+    def type(self): return TYPE_BOX_RAMPS
+    def displayName(self): return 'Bivariate Box + Variable Ramps Legend'
+    def icon(self): return _ramps_icon(self._legend_data()[0][:9], True)
+
+    def draw(self, ctx):
+        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.Antialiasing)
+        scale = ctx.renderContext().scaleFactor()
+        iw, ih = self.rect().width() * scale, self.rect().height() * scale
+        colors, dim = self._legend_data()
+        source_kind = self._source_kind()
+        x_label, y_label = _display_axis_labels(self)
+        gap = max(0.0, self._gap * scale)
+        margin = 2.0 * scale
+        axis_space = 7.0 * scale if self._show_labels else 0.0
+        label_width = iw * .34 if self._show_labels else 0.0
+        ramp_block = min(18.0 * scale, max(10.0 * scale, ih * .23))
+        grid_area_w = max(1.0, iw - 2 * margin - axis_space - label_width)
+        grid_area_h = max(1.0, ih - 2 * margin - ramp_block - axis_space)
+
+        if self._fit_to_item:
+            cs = max(1.0, min(
+                (grid_area_w - (dim - 1) * gap) / dim,
+                (grid_area_h - (dim - 1) * gap) / dim,
+            ))
+        else:
+            cs = self._cell_size * scale
+        step = cs + gap
+        grid = dim * cs + (dim - 1) * gap
+        ml = margin + axis_space + max(0.0, (grid_area_w - grid) / 2)
+        mt = margin + ramp_block + max(0.0, (grid_area_h - grid) / 2)
+        pen = self._pen()
+        pen.setWidthF(self._outline_w * scale)
+
+        bar_h = max(2.0 * scale, min(4.0 * scale, ramp_block * .27))
+        row_gap = max(1.0 * scale, min(gap, 2.0 * scale))
+        segment_gap = min(max(.35 * scale, gap * .22), bar_h * .22)
+        rf = QFont(); rf.setPointSizeF(max(5.0, min(10.0, (bar_h / scale) * 1.2)))
+        _draw_component_ramps(
+            p, colors, dim, ml, margin, grid, bar_h, row_gap,
+            segment_gap, (x_label, y_label), label_width - row_gap, rf, pen,
+        )
+
+        cf = QFont(); cf.setBold(True); cf.setPointSizeF(max(4, (cs / scale) * .22))
+        for row in range(dim):
+            for col in range(dim):
+                y_class = dim - row
+                idx = col * dim + (y_class - 1)
+                code = (f'{chr(65 + col)}{y_class}' if source_kind == 'vector'
+                        else f'{col + 1}{y_class}')
+                rect = QRectF(ml + col * step, mt + row * step, cs, cs)
+                p.fillRect(rect, QBrush(QColor(colors[idx])))
+                p.setPen(pen); p.drawRect(rect)
+                if self._show_codes:
+                    p.setFont(cf); p.setPen(QPen(_text_color(colors[idx])))
+                    p.drawText(rect, Qt.AlignCenter, code); p.setPen(pen)
+
+        if self._show_labels:
+            af = QFont(); af.setPointSizeF(max(5.0, min(9.0, (cs / scale) * .28)))
+            p.setFont(af); p.setPen(QPen(QColor('#555555')))
+            p.drawText(QRectF(ml, mt + grid, grid * .48, axis_space),
+                       Qt.AlignLeft | Qt.AlignVCenter, 'Low')
+            p.drawText(QRectF(ml + grid * .52, mt + grid, grid * .48, axis_space),
+                       Qt.AlignRight | Qt.AlignVCenter, 'High')
+            p.drawText(QRectF(margin, mt, axis_space - scale, grid * .45),
+                       Qt.AlignRight | Qt.AlignTop, 'High')
+            p.drawText(QRectF(margin, mt + grid * .55, axis_space - scale, grid * .45),
+                       Qt.AlignRight | Qt.AlignBottom, 'Low')
+        p.restore()
+
+
+class BivariateRampsLegendItem(_BivariateBaseItem):
+    """Compact two-strip legend for the component colors of a bivariate box."""
+
+    def __init__(self, layout):
+        super().__init__(layout)
+        self._show_labels = True
+        try:
+            self.attemptResize(QgsLayoutSize(90, 24, QgsUnitTypes.LayoutMillimeters))
+        except Exception:
+            pass
+
+    def type(self): return TYPE_RAMPS
+    def displayName(self): return 'Bivariate Variable Ramps Legend'
+    def icon(self): return _ramps_icon(self._legend_data()[0][:9], False)
+
+    def draw(self, ctx):
+        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.Antialiasing)
+        scale = ctx.renderContext().scaleFactor()
+        iw, ih = self.rect().width() * scale, self.rect().height() * scale
+        colors, dim = self._legend_data()
+        x_label, y_label = _display_axis_labels(self)
+        margin = 2.0 * scale
+        row_gap = max(1.0 * scale, min(self._gap * scale, 2.0 * scale))
+        label_width = iw * .40 if self._show_labels else 0.0
+        ramp_width = max(1.0, iw - 2 * margin - label_width - row_gap)
+        if self._fit_to_item:
+            bar_h = max(1.0, (ih - 2 * margin - row_gap) / 2)
+        else:
+            bar_h = max(2.0 * scale, self._cell_size * scale * .24)
+        total_h = 2 * bar_h + row_gap
+        top = max(margin, (ih - total_h) / 2)
+        segment_gap = min(max(.35 * scale, self._gap * scale * .22), bar_h * .22)
+        font = QFont(); font.setPointSizeF(max(5.0, min(10.0, (bar_h / scale) * .72)))
+        pen = self._pen(); pen.setWidthF(self._outline_w * scale)
+        _draw_component_ramps(
+            p, colors, dim, margin, top, ramp_width, bar_h, row_gap,
+            segment_gap, (x_label, y_label), label_width, font, pen,
+        )
+        p.restore()
+
+
 class BivariateDiamondLegendItem(_BivariateBaseItem):
     def type(self): return TYPE_DIAMOND
     def displayName(self): return 'Bivariate Diamond Legend'
@@ -363,7 +555,7 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         self._build_ui(); self._populate()
 
     def setNewItem(self, item):
-        if item.type() not in (TYPE_BOX, TYPE_DIAMOND): return False
+        if item.type() not in (TYPE_BOX, TYPE_DIAMOND, TYPE_BOX_RAMPS, TYPE_RAMPS): return False
         self._item = item; self._populate(); return True
 
     def _build_ui(self):
@@ -375,7 +567,7 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         h.addWidget(self._rescan); h.addWidget(self._status, 1); fs.addRow('', row); root.addWidget(gs)
 
         g1 = QGroupBox('Palette'); f1 = QFormLayout(g1)
-        self._pal = QComboBox(); self._pal.addItems(PALETTE_NAMES); f1.addRow('Palette:', self._pal)
+        self._pal = QComboBox(); populate_palette_combo(self._pal, PALETTE_NAMES); f1.addRow('Palette:', self._pal)
         self._dim = QComboBox(); self._dim.addItems(['3×3','4×4','5×5']); f1.addRow('Grid size:', self._dim)
         self._custom = QLineEdit(); self._custom.setPlaceholderText('Paste Staridas labelled HEX, CSS, or JSON'); f1.addRow('Custom colors:', self._custom)
         self._transpose = QCheckBox('Transpose axes (swap X ↔ Y)'); f1.addRow('', self._transpose); root.addWidget(g1)
@@ -387,7 +579,7 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
 
         g3 = QGroupBox('Labels — same axes as map'); f3 = QFormLayout(g3)
         self._la = QLineEdit(); self._lb = QLineEdit(); f3.addRow('Variable 2 (X):', self._la); f3.addRow('Variable 1 (Y):', self._lb)
-        self._show_labels = QCheckBox('Show axis labels (box only)'); self._show_codes = QCheckBox('Show class codes on cells')
+        self._show_labels = QCheckBox('Show variable and Low/High labels'); self._show_codes = QCheckBox('Show class codes on cells')
         f3.addRow(self._show_labels); f3.addRow(self._show_codes); root.addWidget(g3)
 
         g4 = QGroupBox('Outline'); f4 = QFormLayout(g4)
@@ -420,6 +612,7 @@ class BivariatePropertiesWidget(QgsLayoutItemBaseWidget):
         self._pal.setCurrentIndex(it._pal_idx); self._dim.setCurrentIndex(it._dim-3); self._custom.setText(it._custom)
         self._transpose.setChecked(it._transposed); self._cell.setValue(it._cell_size); self._gap.setValue(it._gap); self._fit.setChecked(it._fit_to_item)
         self._la.setText(it._label_a); self._lb.setText(it._label_b); self._show_labels.setChecked(it._show_labels); self._show_codes.setChecked(it._show_codes)
+        self._show_codes.setEnabled(it.type() != TYPE_RAMPS)
         self._set_outline(it._outline_hex); self._outline_w.setValue(it._outline_w); self._building = False; self._update_status()
 
     def _update_status(self):
@@ -471,6 +664,16 @@ class BivariateDiamondLegendMetadata(QgsLayoutItemAbstractMetadata):
     def createItem(self, layout): return BivariateDiamondLegendItem(layout)
 
 
+class BivariateBoxRampsLegendMetadata(QgsLayoutItemAbstractMetadata):
+    def __init__(self): super().__init__(TYPE_BOX_RAMPS, QCoreApplication.translate('BivariatePlugin', 'Bivariate Box + Variable Ramps Legend'))
+    def createItem(self, layout): return BivariateBoxRampsLegendItem(layout)
+
+
+class BivariateRampsLegendMetadata(QgsLayoutItemAbstractMetadata):
+    def __init__(self): super().__init__(TYPE_RAMPS, QCoreApplication.translate('BivariatePlugin', 'Bivariate Variable Ramps Legend'))
+    def createItem(self, layout): return BivariateRampsLegendItem(layout)
+
+
 class BivariateBoxLegendGuiMetadata(QgsLayoutItemAbstractGuiMetadata):
     def __init__(self): super().__init__(TYPE_BOX, QCoreApplication.translate('BivariatePlugin', 'Bivariate Box Legend'))
     def creationIcon(self): return _icon(list(PALETTES.values())[6], False, 24)
@@ -480,4 +683,16 @@ class BivariateBoxLegendGuiMetadata(QgsLayoutItemAbstractGuiMetadata):
 class BivariateDiamondLegendGuiMetadata(QgsLayoutItemAbstractGuiMetadata):
     def __init__(self): super().__init__(TYPE_DIAMOND, QCoreApplication.translate('BivariatePlugin', 'Bivariate Diamond Legend'))
     def creationIcon(self): return _icon(list(PALETTES.values())[6], True, 24)
+    def createItemWidget(self, item): return BivariatePropertiesWidget(None, item)
+
+
+class BivariateBoxRampsLegendGuiMetadata(QgsLayoutItemAbstractGuiMetadata):
+    def __init__(self): super().__init__(TYPE_BOX_RAMPS, QCoreApplication.translate('BivariatePlugin', 'Bivariate Box + Variable Ramps Legend'))
+    def creationIcon(self): return _ramps_icon(list(PALETTES.values())[6], True, 24)
+    def createItemWidget(self, item): return BivariatePropertiesWidget(None, item)
+
+
+class BivariateRampsLegendGuiMetadata(QgsLayoutItemAbstractGuiMetadata):
+    def __init__(self): super().__init__(TYPE_RAMPS, QCoreApplication.translate('BivariatePlugin', 'Bivariate Variable Ramps Legend'))
+    def creationIcon(self): return _ramps_icon(list(PALETTES.values())[6], False, 24)
     def createItemWidget(self, item): return BivariatePropertiesWidget(None, item)

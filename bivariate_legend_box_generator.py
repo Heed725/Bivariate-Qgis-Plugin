@@ -16,9 +16,8 @@ LAYOUT ICON FEATURE:
   3. Double-click any category color swatch to change it
   4. Refresh the Layout map item to see changes live
 """
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-from palettes import PALETTES, CODE_LABELS
+from .palettes import PALETTES, CODE_LABELS
+from .palette_widgets import make_palette_parameter
 
 
 from qgis.PyQt.QtCore import QCoreApplication, QVariant
@@ -96,7 +95,7 @@ class BivariateLegendBoxGenerator(QgsProcessingAlgorithm):
         )
 
     def initAlgorithm(self, config=None):
-        self.addParameter(QgsProcessingParameterEnum(
+        self.addParameter(make_palette_parameter(
             self.PALETTE_CHOICE, self.tr('Color palette'),
             options=PALETTE_NAMES, defaultValue=6))
 
