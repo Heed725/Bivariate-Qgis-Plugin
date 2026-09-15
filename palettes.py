@@ -155,5 +155,5 @@ def transpose_palette(colors, dim=None):
     """Swap X/Y axes for any supported square palette."""
     dim = dim or int(round(len(colors) ** 0.5))
     if dim not in SUPPORTED_DIMS or len(colors) != dim * dim:
-        raise ValueError(f'transpose_palette expects a 3×3, 4×4, or 5×5 palette')
+        raise ValueError('transpose_palette expects a 3×3, 4×4, or 5×5 palette')
     return [colors[row * dim + col] for col in range(dim) for row in range(dim)]

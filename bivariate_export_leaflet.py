@@ -9,7 +9,7 @@ Exports a bivariate-classified vector layer to a fully-styled standalone Leaflet
 - Dark/light theme switch
 - Search bar, fullscreen, zoom controls
 """
-from .palettes import PALETTES, class_codes, palette_colors
+from .palettes import PALETTES, class_codes, code_label, palette_colors
 from .palette_widgets import make_palette_parameter
 
 
@@ -465,8 +465,11 @@ const VAR_A      = {json.dumps(var_a)};
 const VAR_B      = {json.dumps(var_b)};
 const CLASS_COUNTS = {json.dumps(class_counts)};
 const PALETTE_COLORS = {json.dumps(colors)};
-const VECTOR_CLASSES = {json.dumps(VECTOR_CLASSES)};
-const CODE_LABELS = {json.dumps({VECTOR_CLASSES[i]: CODE_LABELS[['11','12','13','21','22','23','31','32','33'][i]] for i in range(9)})};
+const VECTOR_CLASSES = {json.dumps(vector_classes)};
+const CODE_LABELS = {json.dumps({
+    class_code: code_label(class_code, dim)
+    for class_code in vector_classes
+})};
 
 // ── Map init ──────────────────────────────────────────
 const map = L.map('map', {{zoomControl: true}});
