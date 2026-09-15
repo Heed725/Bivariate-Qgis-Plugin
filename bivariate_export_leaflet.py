@@ -206,9 +206,16 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
 
             try:
                 geoj = json.loads(geom.asJson())
-            except Exception:
-                continue
-            features.append({'type':'Feature','properties':props,'geometry':geoj})
+            except (TypeError, ValueError) as exc:
+                feedback.pushWarning(
+                    f'Skipped feature {feat.id()}: invalid geometry JSON ({exc})'
+                )
+            else:
+                features.append({
+                    'type': 'Feature',
+                    'properties': props,
+                    'geometry': geoj,
+                })
             feedback.setProgress(int(i * 85 / total))
 
         geojson_str = json.dumps({'type':'FeatureCollection','features':features})

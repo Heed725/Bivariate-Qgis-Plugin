@@ -27,8 +27,8 @@ jobs:
       - name: Compile Python files
         run: python -m compileall -q .
 
-      - name: Run Bandit for blocking severities
-        run: bandit -r . --exclude ./.git,./package -lll -q
+      - name: Run Bandit at all severities
+        run: bandit -r . --exclude ./.git,./package -q
 
       - name: Run detect-secrets
         run: |

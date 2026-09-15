@@ -19,6 +19,8 @@ deprecated=False
 hasProcessingProvider=yes
 
 changelog=0.0.5
+    - Replaced silent broad exception handlers with explicit recovery paths,
+      targeted exceptions and useful warnings so all Bandit checks pass.
     - Updated Qt and QGIS enum references for QGIS 4 and Qt6 while retaining
       compatibility fallbacks for QGIS 3.16 and Qt5.
     - Added Bivariate Box + Variable Ramps Legend to Print Layout, combining

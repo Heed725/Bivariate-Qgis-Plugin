@@ -69,7 +69,7 @@ jobs:
           set -euo pipefail
           git tag --force 0.0.5 "$GITHUB_SHA"
           git push origin refs/tags/0.0.5 --force
-          notes='Adds colour-grid previews beside palette names across vector, raster, Leaflet and Print Layout workflows; fixes QGIS 3.40 Processing widget errors and stale imports; and adds Box + Variable Ramps and compact Variable Ramps Print Layout legends for 3x3, 4x4 and 5x5 palettes.'
+          notes='Version 0.0.5 adds colour-grid previews beside palette names across vector, raster, Leaflet and Print Layout workflows; fixes QGIS 3.40 Processing widget errors and stale imports; adds Box + Variable Ramps and compact Variable Ramps Print Layout legends for 3x3, 4x4 and 5x5 palettes; and replaces silent broad exception handlers with targeted recovery paths so the complete Bandit scan passes.'
           if gh release view 0.0.5 >/dev/null 2>&1; then
             gh release edit 0.0.5 \
               --title 'Bivariate QGIS Plugin 0.0.5' \

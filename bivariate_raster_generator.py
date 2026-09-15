@@ -78,8 +78,8 @@ def _calc_qgis(expr, layers, out_path):
         err = ''
         try:
             err = calc.lastError()
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError) as exc:
+            err = f'Could not read the calculator error message: {exc}'
         raise QgsProcessingException(
             f'Raster calculation failed (code {result}). {err}'
         )

@@ -90,9 +90,9 @@ def _raster_style(layer):
             try:
                 code = str(int(round(float(entry.value))))
                 color = _hex(entry.color)
-            except Exception:
-                continue
-            if re.fullmatch(r'[1-5][1-5]', code) and color:
+            except (AttributeError, TypeError, ValueError):
+                code, color = '', None
+            if code and re.fullmatch(r'[1-5][1-5]', code) and color:
                 found[code] = color
         if not found:
             return None
@@ -126,25 +126,26 @@ def _layout_layers(layout):
             if isinstance(layer, (QgsVectorLayer, QgsRasterLayer)) and layer.isValid() and layer.id() not in seen:
                 seen.add(layer.id())
                 result.append(layer)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError):
+            return
 
     if layout is not None:
         try:
-            for item in layout.items():
-                if not isinstance(item, QgsLayoutItemMap):
-                    continue
+            layout_items = layout.items()
+        except (AttributeError, RuntimeError):
+            layout_items = []
+        for item in layout_items:
+            if not isinstance(item, QgsLayoutItemMap):
+                continue
+            try:
+                layers = item.layersToRender()
+            except (AttributeError, RuntimeError):
                 try:
-                    layers = item.layersToRender()
-                except Exception:
-                    try:
-                        layers = item.layers()
-                    except Exception:
-                        layers = []
-                for layer in layers:
-                    add(layer)
-        except Exception:
-            pass
+                    layers = item.layers()
+                except (AttributeError, RuntimeError):
+                    layers = []
+            for layer in layers:
+                add(layer)
     if not result:
         for layer in QgsProject.instance().mapLayers().values():
             add(layer)
@@ -287,10 +288,7 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._outline_w = 0.3
         self._transposed = False
         self._linked_layer_id = SOURCE_AUTO
-        try:
-            self.attemptResize(QgsLayoutSize(80, 80, LAYOUT_MILLIMETERS))
-        except Exception:
-            pass
+        self.attemptResize(QgsLayoutSize(80, 80, LAYOUT_MILLIMETERS))
 
     def writePropertiesToElement(self, el, doc, ctx):
         attrs = {
@@ -403,10 +401,7 @@ class BivariateBoxRampsLegendItem(_BivariateBaseItem):
     def __init__(self, layout):
         super().__init__(layout)
         self._show_labels = True
-        try:
-            self.attemptResize(QgsLayoutSize(90, 90, LAYOUT_MILLIMETERS))
-        except Exception:
-            pass
+        self.attemptResize(QgsLayoutSize(90, 90, LAYOUT_MILLIMETERS))
 
     def type(self): return TYPE_BOX_RAMPS
     def displayName(self): return 'Bivariate Box + Variable Ramps Legend'
@@ -484,10 +479,7 @@ class BivariateRampsLegendItem(_BivariateBaseItem):
     def __init__(self, layout):
         super().__init__(layout)
         self._show_labels = True
-        try:
-            self.attemptResize(QgsLayoutSize(90, 24, LAYOUT_MILLIMETERS))
-        except Exception:
-            pass
+        self.attemptResize(QgsLayoutSize(90, 24, LAYOUT_MILLIMETERS))
 
     def type(self): return TYPE_RAMPS
     def displayName(self): return 'Bivariate Variable Ramps Legend'
