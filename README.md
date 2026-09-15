@@ -49,6 +49,8 @@ It retains the automatic Print Layout layer sensing and single axis convention i
 ## Installation
 
 1. Download `bivariate_plugin-0.0.5.zip` from the [0.0.5 GitHub release](https://github.com/Heed725/Bivariate-Qgis-Plugin/releases/tag/0.0.5).
+   Download the named ZIP under **Assets**; do not use GitHub's automatically
+   generated **Source code (zip)** or **Source code (tar.gz)** archives.
 2. Open **QGIS → Plugins → Manage and Install Plugins**.
 3. Choose **Install from ZIP**.
 4. Select the ZIP and install it.
@@ -226,7 +228,7 @@ icon.png
 
 ## Requirements
 
-- QGIS 3.16 or later.
+- QGIS 3.16 through QGIS 4.x, with Qt5 and Qt6 compatibility.
 - Python included with QGIS.
 - GDAL/OGR and NumPy bundled with normal QGIS installations.
 

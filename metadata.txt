@@ -1,6 +1,7 @@
 [general]
 name=Bivariate QGIS Plugin
 qgisMinimumVersion=3.16
+qgisMaximumVersion=4.99
 description=Bivariate mapping suite with selectable 3x3, 4x4 and 5x5 classification, Staridas palette import, vector/raster styling, legends and Leaflet export.
 version=0.0.5
 author=Hemed Lungo
@@ -18,6 +19,8 @@ deprecated=False
 hasProcessingProvider=yes
 
 changelog=0.0.5
+    - Updated Qt and QGIS enum references for QGIS 4 and Qt6 while retaining
+      compatibility fallbacks for QGIS 3.16 and Qt5.
     - Added Bivariate Box + Variable Ramps Legend to Print Layout, combining
       the square bivariate matrix with two low-to-high component color strips.
     - Added Bivariate Variable Ramps Legend for the compact two-strip layout.

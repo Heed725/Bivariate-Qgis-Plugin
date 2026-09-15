@@ -11,7 +11,7 @@ from qgis.PyQt.QtWidgets import (
     QGraphicsItem,
 )
 from qgis.core import (
-    QgsApplication, QgsCategorizedSymbolRenderer, QgsLayoutItem,
+    Qgis, QgsCategorizedSymbolRenderer, QgsLayoutItem,
     QgsLayoutItemAbstractMetadata, QgsLayoutItemMap, QgsLayoutItemRegistry,
     QgsLayoutSize, QgsPalettedRasterRenderer, QgsProject, QgsRasterLayer,
     QgsUnitTypes, QgsVectorLayer,
@@ -21,7 +21,15 @@ from qgis.gui import QgsLayoutItemAbstractGuiMetadata, QgsLayoutItemBaseWidget
 from .palettes import PALETTES, class_codes, palette_colors, transpose_palette
 from .palette_widgets import populate_palette_combo
 
-PLUGIN_BASE = QgsLayoutItemRegistry.PluginItem
+try:
+    PLUGIN_BASE = QgsLayoutItemRegistry.ItemType.PluginItem
+except AttributeError:
+    PLUGIN_BASE = getattr(QgsLayoutItemRegistry, 'PluginItem')
+
+try:
+    LAYOUT_MILLIMETERS = Qgis.LayoutUnit.Millimeters
+except AttributeError:
+    LAYOUT_MILLIMETERS = getattr(QgsUnitTypes, 'LayoutMillimeters')
 TYPE_BOX = PLUGIN_BASE + 1338
 TYPE_DIAMOND = PLUGIN_BASE + 1339
 TYPE_BOX_RAMPS = PLUGIN_BASE + 1340
@@ -171,9 +179,9 @@ def _text_color(color):
 
 def _icon(colors, diamond=False, size=24):
     px = QPixmap(size, size)
-    px.fill(Qt.transparent)
+    px.fill(Qt.GlobalColor.transparent)
     p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
     order = [6, 7, 8, 3, 4, 5, 0, 1, 2]
     cs = size / 3.5
     for i, ci in enumerate(order):
@@ -183,7 +191,7 @@ def _icon(colors, diamond=False, size=24):
             cx = size / 2 + (col - 1) * cs * .82 - (row - 1) * cs * .82
             cy = size / 2 + (col - 1) * cs * .45 + (row - 1) * cs * .45 + cs * .25
             h = cs * .5
-            p.setBrush(QBrush(c)); p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(c)); p.setPen(Qt.PenStyle.NoPen)
             p.drawPolygon(QPolygonF([QPointF(cx, cy-h), QPointF(cx+h, cy), QPointF(cx, cy+h), QPointF(cx-h, cy)]))
         else:
             x, y, w = col * (size / 3.1) + 1, row * (size / 3.1) + 1, size / 3.1 - 1.5
@@ -226,7 +234,7 @@ def _draw_component_ramps(painter, colors, dim, x, y, width, bar_height,
             painter.drawText(
                 QRectF(x + width + row_gap, top - bar_height * .22,
                        label_width, bar_height * 1.45),
-                Qt.AlignLeft | Qt.AlignVCenter,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 label,
             )
 
@@ -234,9 +242,9 @@ def _draw_component_ramps(painter, colors, dim, x, y, width, bar_height,
 def _ramps_icon(colors, with_box=False, size=24):
     """Create toolbar icons for the compact and box-plus-ramps items."""
     px = QPixmap(size, size)
-    px.fill(Qt.transparent)
+    px.fill(Qt.GlobalColor.transparent)
     p = QPainter(px)
-    p.setRenderHint(QPainter.Antialiasing, False)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
     y_colors, x_colors = _component_colors(colors, 3)
     gap = 1.0
     bar_h = max(2.0, size * .12)
@@ -262,7 +270,7 @@ def _ramps_icon(colors, with_box=False, size=24):
 class _BivariateBaseItem(QgsLayoutItem):
     def __init__(self, layout):
         super().__init__(layout)
-        self.setCacheMode(QGraphicsItem.NoCache)
+        self.setCacheMode(QGraphicsItem.CacheMode.NoCache)
         self._pal_idx = 6
         self._custom = ''
         self._dim = 3
@@ -280,7 +288,7 @@ class _BivariateBaseItem(QgsLayoutItem):
         self._transposed = False
         self._linked_layer_id = SOURCE_AUTO
         try:
-            self.attemptResize(QgsLayoutSize(80, 80, QgsUnitTypes.LayoutMillimeters))
+            self.attemptResize(QgsLayoutSize(80, 80, LAYOUT_MILLIMETERS))
         except Exception:
             pass
 
@@ -347,7 +355,7 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
     def icon(self): return _icon(self._legend_data()[0], False)
 
     def draw(self, ctx):
-        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.Antialiasing)
+        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         scale = ctx.renderContext().scaleFactor()
         iw, ih = self.rect().width() * scale, self.rect().height() * scale
         colors, dim = self._legend_data()
@@ -378,14 +386,14 @@ class BivariateBoxLegendItem(_BivariateBaseItem):
                 p.setPen(pen); p.drawRect(QRectF(x, y, cs, cs))
                 if self._show_codes:
                     p.setFont(cf); p.setPen(QPen(_text_color(colors[idx])))
-                    p.drawText(QRectF(x, y, cs, cs), Qt.AlignCenter, code); p.setPen(pen)
+                    p.drawText(QRectF(x, y, cs, cs), Qt.AlignmentFlag.AlignCenter, code); p.setPen(pen)
         if self._show_labels:
             af = QFont(); af.setPointSizeF(max(5, (cs / scale) * .28)); p.setFont(af); p.setPen(QPen(QColor('#555555')))
             x_label = self._label_b if self._transposed and self._linked_layer_id == SOURCE_MANUAL else self._label_a
             y_label = self._label_a if self._transposed and self._linked_layer_id == SOURCE_MANUAL else self._label_b
-            p.drawText(QRectF(ml, mt + grid + gap * .5, grid, cs * .8), Qt.AlignCenter, f'{x_label}  →')
+            p.drawText(QRectF(ml, mt + grid + gap * .5, grid, cs * .8), Qt.AlignmentFlag.AlignCenter, f'{x_label}  →')
             p.save(); p.translate(ml-gap*.5, mt+grid/2); p.rotate(-90)
-            p.drawText(QRectF(-grid/2, -cs*.8, grid, cs*.8), Qt.AlignCenter, f'↑  {y_label}'); p.restore()
+            p.drawText(QRectF(-grid/2, -cs*.8, grid, cs*.8), Qt.AlignmentFlag.AlignCenter, f'↑  {y_label}'); p.restore()
         p.restore()
 
 
@@ -396,7 +404,7 @@ class BivariateBoxRampsLegendItem(_BivariateBaseItem):
         super().__init__(layout)
         self._show_labels = True
         try:
-            self.attemptResize(QgsLayoutSize(90, 90, QgsUnitTypes.LayoutMillimeters))
+            self.attemptResize(QgsLayoutSize(90, 90, LAYOUT_MILLIMETERS))
         except Exception:
             pass
 
@@ -405,7 +413,7 @@ class BivariateBoxRampsLegendItem(_BivariateBaseItem):
     def icon(self): return _ramps_icon(self._legend_data()[0][:9], True)
 
     def draw(self, ctx):
-        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.Antialiasing)
+        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         scale = ctx.renderContext().scaleFactor()
         iw, ih = self.rect().width() * scale, self.rect().height() * scale
         colors, dim = self._legend_data()
@@ -454,19 +462,19 @@ class BivariateBoxRampsLegendItem(_BivariateBaseItem):
                 p.setPen(pen); p.drawRect(rect)
                 if self._show_codes:
                     p.setFont(cf); p.setPen(QPen(_text_color(colors[idx])))
-                    p.drawText(rect, Qt.AlignCenter, code); p.setPen(pen)
+                    p.drawText(rect, Qt.AlignmentFlag.AlignCenter, code); p.setPen(pen)
 
         if self._show_labels:
             af = QFont(); af.setPointSizeF(max(5.0, min(9.0, (cs / scale) * .28)))
             p.setFont(af); p.setPen(QPen(QColor('#555555')))
             p.drawText(QRectF(ml, mt + grid, grid * .48, axis_space),
-                       Qt.AlignLeft | Qt.AlignVCenter, 'Low')
+                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 'Low')
             p.drawText(QRectF(ml + grid * .52, mt + grid, grid * .48, axis_space),
-                       Qt.AlignRight | Qt.AlignVCenter, 'High')
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, 'High')
             p.drawText(QRectF(margin, mt, axis_space - scale, grid * .45),
-                       Qt.AlignRight | Qt.AlignTop, 'High')
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop, 'High')
             p.drawText(QRectF(margin, mt + grid * .55, axis_space - scale, grid * .45),
-                       Qt.AlignRight | Qt.AlignBottom, 'Low')
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom, 'Low')
         p.restore()
 
 
@@ -477,7 +485,7 @@ class BivariateRampsLegendItem(_BivariateBaseItem):
         super().__init__(layout)
         self._show_labels = True
         try:
-            self.attemptResize(QgsLayoutSize(90, 24, QgsUnitTypes.LayoutMillimeters))
+            self.attemptResize(QgsLayoutSize(90, 24, LAYOUT_MILLIMETERS))
         except Exception:
             pass
 
@@ -486,7 +494,7 @@ class BivariateRampsLegendItem(_BivariateBaseItem):
     def icon(self): return _ramps_icon(self._legend_data()[0][:9], False)
 
     def draw(self, ctx):
-        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.Antialiasing)
+        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         scale = ctx.renderContext().scaleFactor()
         iw, ih = self.rect().width() * scale, self.rect().height() * scale
         colors, dim = self._legend_data()
@@ -517,7 +525,7 @@ class BivariateDiamondLegendItem(_BivariateBaseItem):
     def icon(self): return _icon(self._legend_data()[0], True)
 
     def draw(self, ctx):
-        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.Antialiasing)
+        p = ctx.renderContext().painter(); p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         scale = ctx.renderContext().scaleFactor()
         iw, ih = self.rect().width() * scale, self.rect().height() * scale
         colors, dim = self._legend_data()
@@ -544,7 +552,7 @@ class BivariateDiamondLegendItem(_BivariateBaseItem):
                 p.fillPath(path, QBrush(QColor(colors[idx]))); p.setPen(pen); p.drawPath(path)
                 if self._show_codes:
                     p.setFont(cf); p.setPen(QPen(_text_color(colors[idx])))
-                    p.drawText(QRectF(cx-half*.6, cy-half*.4, half*1.2, half*.8), Qt.AlignCenter, code); p.setPen(pen)
+                    p.drawText(QRectF(cx-half*.6, cy-half*.4, half*1.2, half*.8), Qt.AlignmentFlag.AlignCenter, code); p.setPen(pen)
         p.restore()
 
 

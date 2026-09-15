@@ -3,9 +3,6 @@ QGIS Processing Script: Bivariate Choropleth Map Generator
 Creates bivariate choropleth classification based on two numeric fields.
 Methodology: Joshua Stevens (https://www.joshuastevens.net/cartography/make-a-bivariate-choropleth-map/)
 """
-from .palettes import PALETTES, CODE_LABELS
-
-
 from qgis.core import (
     QgsProcessing, QgsProcessingAlgorithm,
     QgsProcessingParameterVectorLayer,
@@ -15,7 +12,30 @@ from qgis.core import (
     QgsProcessingException,
     QgsField, QgsFeature, QgsFeatureSink,
 )
-from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtCore import QMetaType, QVariant
+
+
+try:
+    VECTOR_POLYGON = QgsProcessing.SourceType.TypeVectorPolygon
+except AttributeError:
+    VECTOR_POLYGON = getattr(QgsProcessing, 'TypeVectorPolygon')
+
+try:
+    NUMERIC_FIELD = QgsProcessingParameterField.DataType.Numeric
+except AttributeError:
+    NUMERIC_FIELD = getattr(QgsProcessingParameterField, 'Numeric')
+
+try:
+    FIELD_INT = QMetaType.Type.Int
+    FIELD_STRING = QMetaType.Type.QString
+except AttributeError:
+    FIELD_INT = getattr(QVariant, 'Int')
+    FIELD_STRING = getattr(QVariant, 'String')
+
+try:
+    FAST_INSERT = QgsFeatureSink.Flag.FastInsert
+except AttributeError:
+    FAST_INSERT = getattr(QgsFeatureSink, 'FastInsert')
 
 
 class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
@@ -28,15 +48,15 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterVectorLayer(
-            self.INPUT, 'Input layer', [QgsProcessing.TypeVectorPolygon]))
+            self.INPUT, 'Input layer', [VECTOR_POLYGON]))
         self.addParameter(QgsProcessingParameterField(
             self.VAR1_FIELD, 'Variable 1 (vertical axis 1-3)',
             parentLayerParameterName=self.INPUT,
-            type=QgsProcessingParameterField.Numeric))
+            type=NUMERIC_FIELD))
         self.addParameter(QgsProcessingParameterField(
             self.VAR2_FIELD, 'Variable 2 (horizontal axis A-C)',
             parentLayerParameterName=self.INPUT,
-            type=QgsProcessingParameterField.Numeric))
+            type=NUMERIC_FIELD))
         self.addParameter(QgsProcessingParameterEnum(
             self.CLASSIFICATION_METHOD, 'Classification method',
             options=['Quantile (Equal Count)', 'Natural Breaks (Jenks)', 'Equal Interval'],
@@ -76,9 +96,9 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
         feedback.pushInfo(f'Variable 2 breaks: {var2_breaks}')
 
         fields = source.fields()
-        fields.append(QgsField('Var1_Class', QVariant.Int))
-        fields.append(QgsField('Var2_Class', QVariant.String))
-        fields.append(QgsField('Bi_Class', QVariant.String))
+        fields.append(QgsField('Var1_Class', FIELD_INT))
+        fields.append(QgsField('Var2_Class', FIELD_STRING))
+        fields.append(QgsField('Bi_Class', FIELD_STRING))
 
         (sink, dest_id) = self.parameterAsSink(
             parameters, self.OUTPUT, context,
@@ -104,7 +124,7 @@ class BivariateChoroplethAlgorithm(QgsProcessingAlgorithm):
             out.setAttribute('Var1_Class', c1)
             out.setAttribute('Var2_Class', c2)
             out.setAttribute('Bi_Class', f'{c2}{c1}')
-            sink.addFeature(out, QgsFeatureSink.FastInsert)
+            sink.addFeature(out, FAST_INSERT)
             feedback.setProgress(int(current * 100 / total))
 
         return {self.OUTPUT: dest_id}

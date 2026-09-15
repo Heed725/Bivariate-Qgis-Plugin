@@ -24,6 +24,11 @@ from qgis.core import (
 
 PALETTE_NAMES = list(PALETTES.keys()) + ['Custom / Staridas import']
 
+try:
+    VECTOR_ANY_GEOMETRY = QgsProcessing.SourceType.TypeVectorAnyGeometry
+except AttributeError:
+    VECTOR_ANY_GEOMETRY = getattr(QgsProcessing, 'TypeVectorAnyGeometry')
+
 
 class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
     INPUT = 'INPUT'
@@ -38,7 +43,7 @@ class ApplyBivariateColorsAlgorithm(QgsProcessingAlgorithm):
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterVectorLayer(
             self.INPUT, 'Input layer with bivariate classes',
-            [QgsProcessing.TypeVectorAnyGeometry]))
+            [VECTOR_ANY_GEOMETRY]))
         self.addParameter(QgsProcessingParameterField(
             self.CLASS_FIELD, 'Bivariate class field',
             parentLayerParameterName=self.INPUT,

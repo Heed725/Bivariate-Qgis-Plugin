@@ -20,12 +20,10 @@ from .palettes import PALETTES, CODE_LABELS
 from .palette_widgets import make_palette_parameter
 
 
-from qgis.PyQt.QtCore import QCoreApplication, QVariant
-from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPixmap, QPainter
-from qgis.PyQt.QtCore import Qt, QSize
+from qgis.PyQt.QtCore import QCoreApplication, QMetaType, QVariant
+from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import (
-    QgsProcessing, QgsProcessingAlgorithm,
-    QgsProcessingParameterEnum,
+    Qgis, QgsProcessing, QgsProcessingAlgorithm,
     QgsProcessingParameterNumber,
     QgsProcessingParameterVectorDestination,
     QgsProcessingParameterString,
@@ -34,10 +32,6 @@ from qgis.core import (
     QgsVectorFileWriter, QgsCoordinateReferenceSystem, QgsFields,
     QgsFillSymbol, QgsRendererCategory, QgsCategorizedSymbolRenderer,
     QgsWkbTypes, QgsProcessingException,
-    QgsSingleSymbolRenderer, QgsSymbol,
-    QgsSimpleFillSymbolLayer,
-    QgsLayerDefinition,
-    QgsMapLayer,
     QgsProject,
     QgsTextFormat,
     QgsPalLayerSettings,
@@ -46,6 +40,28 @@ from qgis.core import (
 
 PALETTE_NAMES = list(PALETTES.keys()) + ['Custom (enter hex codes below)']
 CODES = ['11','12','13','21','22','23','31','32','33']
+
+try:
+    HIDE_FROM_TOOLBOX = Qgis.ProcessingAlgorithmFlag.HideFromToolbox
+except AttributeError:
+    HIDE_FROM_TOOLBOX = getattr(QgsProcessingAlgorithm, 'FlagHideFromToolbox')
+
+try:
+    VECTOR_POLYGON = QgsProcessing.SourceType.TypeVectorPolygon
+except AttributeError:
+    VECTOR_POLYGON = getattr(QgsProcessing, 'TypeVectorPolygon')
+
+try:
+    FIELD_INT = QMetaType.Type.Int
+    FIELD_STRING = QMetaType.Type.QString
+except AttributeError:
+    FIELD_INT = getattr(QVariant, 'Int')
+    FIELD_STRING = getattr(QVariant, 'String')
+
+try:
+    LABEL_OVER_POINT = Qgis.LabelPlacement.OverPoint
+except AttributeError:
+    LABEL_OVER_POINT = getattr(QgsPalLayerSettings, 'OverPoint')
 
 
 class BivariateLegendBoxGenerator(QgsProcessingAlgorithm):
@@ -62,7 +78,7 @@ class BivariateLegendBoxGenerator(QgsProcessingAlgorithm):
 
     def flags(self):
         # Hidden from Processing Toolbox — accessible only via Print Layout
-        return super().flags() | QgsProcessingAlgorithm.FlagHideFromToolbox
+        return super().flags() | HIDE_FROM_TOOLBOX
     def createInstance(self):
         return BivariateLegendBoxGenerator()
 
@@ -107,12 +123,12 @@ class BivariateLegendBoxGenerator(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterNumber(
             self.BOX_SIZE, self.tr('Box size (map units)'),
-            type=QgsProcessingParameterNumber.Double,
+            type=QgsProcessingParameterNumber.Type.Double,
             defaultValue=1.0, minValue=0.1))
 
         self.addParameter(QgsProcessingParameterNumber(
             self.SPACING, self.tr('Spacing between boxes (map units)'),
-            type=QgsProcessingParameterNumber.Double,
+            type=QgsProcessingParameterNumber.Type.Double,
             defaultValue=0.05, minValue=0.0))
 
         self.addParameter(QgsProcessingParameterBoolean(
@@ -122,7 +138,7 @@ class BivariateLegendBoxGenerator(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterVectorDestination(
             self.OUTPUT, self.tr('Output legend boxes'),
-            type=QgsProcessing.TypeVectorPolygon))
+            type=VECTOR_POLYGON))
 
     def processAlgorithm(self, parameters, context, feedback):
         pal_idx    = self.parameterAsInt(parameters, self.PALETTE_CHOICE, context)
@@ -147,19 +163,19 @@ class BivariateLegendBoxGenerator(QgsProcessingAlgorithm):
 
         # --- Fields ---
         fields = QgsFields()
-        fields.append(QgsField('code',    QVariant.String))
-        fields.append(QgsField('label',   QVariant.String))
-        fields.append(QgsField('color',   QVariant.String))
-        fields.append(QgsField('a_class', QVariant.String))
-        fields.append(QgsField('b_class', QVariant.String))
-        fields.append(QgsField('row',     QVariant.Int))
-        fields.append(QgsField('col',     QVariant.Int))
+        fields.append(QgsField('code',    FIELD_STRING))
+        fields.append(QgsField('label',   FIELD_STRING))
+        fields.append(QgsField('color',   FIELD_STRING))
+        fields.append(QgsField('a_class', FIELD_STRING))
+        fields.append(QgsField('b_class', FIELD_STRING))
+        fields.append(QgsField('row',     FIELD_INT))
+        fields.append(QgsField('col',     FIELD_INT))
 
         crs    = QgsCoordinateReferenceSystem('EPSG:4326')
         driver = 'GPKG' if out_path.lower().endswith('.gpkg') else 'ESRI Shapefile'
         writer = QgsVectorFileWriter(out_path, 'UTF-8', fields,
-                                     QgsWkbTypes.Polygon, crs, driver)
-        if writer.hasError() != QgsVectorFileWriter.NoError:
+                                     QgsWkbTypes.Type.Polygon, crs, driver)
+        if writer.hasError() != QgsVectorFileWriter.WriterError.NoError:
             raise QgsProcessingException(f'Writer error: {writer.errorMessage()}')
 
         step    = box_size + spacing
@@ -228,7 +244,7 @@ class BivariateLegendBoxGenerator(QgsProcessingAlgorithm):
                 lbl = QgsPalLayerSettings()
                 lbl.fieldName    = 'code'
                 lbl.enabled      = True
-                lbl.placement    = QgsPalLayerSettings.OverPoint
+                lbl.placement    = LABEL_OVER_POINT
                 lbl.setFormat(tf)
                 layer.setLabeling(QgsVectorLayerSimpleLabeling(lbl))
                 layer.setLabelsEnabled(True)

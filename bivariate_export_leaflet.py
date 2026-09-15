@@ -30,6 +30,11 @@ from qgis.core import (
 import json
 
 PALETTE_NAMES   = list(PALETTES.keys()) + ['Custom / Staridas import']
+try:
+    VECTOR_POLYGON = QgsProcessing.SourceType.TypeVectorPolygon
+except AttributeError:
+    VECTOR_POLYGON = getattr(QgsProcessing, 'TypeVectorPolygon')
+
 BASEMAPS = [
     ('CartoDB Positron (Light)',
      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -90,7 +95,7 @@ class BivariateLeafletExporter(QgsProcessingAlgorithm):
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterVectorLayer(
             self.INPUT, self.tr('Input bivariate layer'),
-            [QgsProcessing.TypeVectorPolygon]))
+            [VECTOR_POLYGON]))
         self.addParameter(QgsProcessingParameterField(
             self.CLASS_FIELD, self.tr('Bivariate class field'),
             parentLayerParameterName=self.INPUT, defaultValue='Bi_Class'))

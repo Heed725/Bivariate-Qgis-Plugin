@@ -13,11 +13,10 @@ from .palettes import PALETTES, CODE_LABELS
 from .palette_widgets import make_palette_parameter
 
 
-from qgis.PyQt.QtCore import QCoreApplication, QVariant
+from qgis.PyQt.QtCore import QCoreApplication, QMetaType, QVariant
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import (
-    QgsProcessing, QgsProcessingAlgorithm,
-    QgsProcessingParameterEnum,
+    Qgis, QgsProcessing, QgsProcessingAlgorithm,
     QgsProcessingParameterNumber,
     QgsProcessingParameterVectorDestination,
     QgsProcessingParameterString,
@@ -31,10 +30,32 @@ from qgis.core import (
     QgsPalLayerSettings,
     QgsVectorLayerSimpleLabeling,
 )
-import math, sys, os
+import math
 
 PALETTE_NAMES = list(PALETTES.keys()) + ['Custom (enter hex codes below)']
 CODES = ['11','12','13','21','22','23','31','32','33']
+
+try:
+    HIDE_FROM_TOOLBOX = Qgis.ProcessingAlgorithmFlag.HideFromToolbox
+except AttributeError:
+    HIDE_FROM_TOOLBOX = getattr(QgsProcessingAlgorithm, 'FlagHideFromToolbox')
+
+try:
+    VECTOR_POLYGON = QgsProcessing.SourceType.TypeVectorPolygon
+except AttributeError:
+    VECTOR_POLYGON = getattr(QgsProcessing, 'TypeVectorPolygon')
+
+try:
+    FIELD_INT = QMetaType.Type.Int
+    FIELD_STRING = QMetaType.Type.QString
+except AttributeError:
+    FIELD_INT = getattr(QVariant, 'Int')
+    FIELD_STRING = getattr(QVariant, 'String')
+
+try:
+    LABEL_OVER_POINT = Qgis.LabelPlacement.OverPoint
+except AttributeError:
+    LABEL_OVER_POINT = getattr(QgsPalLayerSettings, 'OverPoint')
 
 
 class BivariateLegendDiamondGenerator(QgsProcessingAlgorithm):
@@ -51,7 +72,7 @@ class BivariateLegendDiamondGenerator(QgsProcessingAlgorithm):
 
     def flags(self):
         # Hidden from Processing Toolbox — accessible only via Print Layout
-        return super().flags() | QgsProcessingAlgorithm.FlagHideFromToolbox
+        return super().flags() | HIDE_FROM_TOOLBOX
     def createInstance(self):
         return BivariateLegendDiamondGenerator()
 
@@ -85,12 +106,12 @@ class BivariateLegendDiamondGenerator(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterNumber(
             self.DIAMOND_SIZE, self.tr('Diamond side length (map units)'),
-            type=QgsProcessingParameterNumber.Double,
+            type=QgsProcessingParameterNumber.Type.Double,
             defaultValue=1.0, minValue=0.1))
 
         self.addParameter(QgsProcessingParameterNumber(
             self.SPACING, self.tr('Gap between diamonds (map units)'),
-            type=QgsProcessingParameterNumber.Double,
+            type=QgsProcessingParameterNumber.Type.Double,
             defaultValue=0.08, minValue=0.0))
 
         self.addParameter(QgsProcessingParameterBoolean(
@@ -100,7 +121,7 @@ class BivariateLegendDiamondGenerator(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterVectorDestination(
             self.OUTPUT, self.tr('Output legend diamonds'),
-            type=QgsProcessing.TypeVectorPolygon))
+            type=VECTOR_POLYGON))
 
     # ------------------------------------------------------------------ helpers
     def _diamond(self, cx, cy, size):
@@ -149,21 +170,21 @@ class BivariateLegendDiamondGenerator(QgsProcessingAlgorithm):
 
         fields = QgsFields()
         for fname, ftype in [
-            ('code',    QVariant.String),
-            ('label',   QVariant.String),
-            ('color',   QVariant.String),
-            ('a_class', QVariant.String),
-            ('b_class', QVariant.String),
-            ('row',     QVariant.Int),
-            ('col',     QVariant.Int),
+            ('code',    FIELD_STRING),
+            ('label',   FIELD_STRING),
+            ('color',   FIELD_STRING),
+            ('a_class', FIELD_STRING),
+            ('b_class', FIELD_STRING),
+            ('row',     FIELD_INT),
+            ('col',     FIELD_INT),
         ]:
             fields.append(QgsField(fname, ftype))
 
         crs    = QgsCoordinateReferenceSystem('EPSG:4326')
         driver = 'GPKG' if out_path.lower().endswith('.gpkg') else 'ESRI Shapefile'
         writer = QgsVectorFileWriter(out_path, 'UTF-8', fields,
-                                     QgsWkbTypes.Polygon, crs, driver)
-        if writer.hasError() != QgsVectorFileWriter.NoError:
+                                     QgsWkbTypes.Type.Polygon, crs, driver)
+        if writer.hasError() != QgsVectorFileWriter.WriterError.NoError:
             raise QgsProcessingException(f'Writer error: {writer.errorMessage()}')
 
         a_lvl = ['Low', 'Mid', 'High']
@@ -217,7 +238,7 @@ class BivariateLegendDiamondGenerator(QgsProcessingAlgorithm):
                 lbl = QgsPalLayerSettings()
                 lbl.fieldName = 'code'
                 lbl.enabled   = True
-                lbl.placement = QgsPalLayerSettings.OverPoint
+                lbl.placement = LABEL_OVER_POINT
                 lbl.setFormat(tf)
                 layer.setLabeling(QgsVectorLayerSimpleLabeling(lbl))
                 layer.setLabelsEnabled(True)

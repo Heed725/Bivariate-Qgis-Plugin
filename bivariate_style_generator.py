@@ -10,7 +10,7 @@ from .palette_widgets import make_palette_parameter
 
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (
-    QgsProcessing, QgsProcessingAlgorithm,
+    QgsProcessingAlgorithm,
     QgsProcessingParameterRasterLayer,
     QgsProcessingParameterEnum,
     QgsProcessingParameterString,

@@ -18,6 +18,7 @@ jobs:
       - name: Package QGIS plugin
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p package/bivariate_plugin
           cp LICENSE README.md __init__.py apply_bivariate_colors.py \
             bivariate_choropleth.py bivariate_export_leaflet.py \
@@ -31,11 +32,34 @@ jobs:
       - name: Validate package
         shell: bash
         run: |
+          set -euo pipefail
           unzip -t bivariate_plugin-0.0.5.zip
           unzip -p bivariate_plugin-0.0.5.zip bivariate_plugin/metadata.txt | \
             grep -q '^version=0.0.5$'
           unzip -l bivariate_plugin-0.0.5.zip | \
             grep -q 'bivariate_plugin/palette_widgets.py'
+          python - <<'PY'
+          import configparser
+          import zipfile
+
+          archive_path = 'bivariate_plugin-0.0.5.zip'
+          with zipfile.ZipFile(archive_path) as archive:
+              names = archive.namelist()
+              roots = {name.split('/', 1)[0] for name in names if name}
+              assert roots == {'bivariate_plugin'}, roots
+              assert 'bivariate_plugin/__init__.py' in names
+              assert 'bivariate_plugin/metadata.txt' in names
+              metadata = configparser.ConfigParser(interpolation=None)
+              metadata.read_string(
+                  archive.read('bivariate_plugin/metadata.txt').decode('utf-8')
+              )
+              general = metadata['general']
+              assert general['version'] == '0.0.5'
+              for key in ('name', 'description', 'author', 'email',
+                          'repository', 'tracker', 'homepage'):
+                  assert general.get(key, '').strip(), key
+          print('QGIS package structure and metadata are valid.')
+          PY
 
       - name: Publish or update GitHub release
         env:

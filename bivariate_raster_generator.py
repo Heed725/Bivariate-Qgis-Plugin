@@ -9,7 +9,7 @@
 
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (
-    QgsProcessing, QgsProcessingAlgorithm, QgsProcessingParameterRasterLayer,
+    QgsProcessingAlgorithm, QgsProcessingParameterRasterLayer,
     QgsProcessingParameterBoolean, QgsProcessingParameterCrs,
     QgsProcessingParameterNumber, QgsProcessingParameterRasterDestination,
     QgsProcessingParameterEnum, QgsRasterLayer, QgsProcessingException, QgsProject
@@ -74,7 +74,7 @@ def _calc_qgis(expr, layers, out_path):
     )
 
     result = calc.processCalculation()
-    if result != QgsRasterCalculator.Success:
+    if result != QgsRasterCalculator.Result.Success:
         err = ''
         try:
             err = calc.lastError()
@@ -181,7 +181,7 @@ class BivariateRasterGenerator(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterNumber(
             self.DIVISOR_B,
             self.tr('Division factor for Raster B (e.g. 30)'),
-            type=QgsProcessingParameterNumber.Double,
+            type=QgsProcessingParameterNumber.Type.Double,
             defaultValue=30.0,
             minValue=1e-6
         ))

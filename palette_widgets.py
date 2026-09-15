@@ -2,7 +2,6 @@
 
 from qgis.PyQt.QtCore import QSize, Qt, QRectF
 from qgis.PyQt.QtGui import QColor, QIcon, QPainter, QPixmap
-from qgis.PyQt.QtWidgets import QComboBox
 from qgis.core import QgsProcessingParameterEnum
 
 from .palettes import PALETTES
@@ -23,9 +22,9 @@ def palette_preview_icon(colors, size=30):
         colors = CUSTOM_PREVIEW_COLORS
 
     pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
+    pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing, False)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
 
     margin = 1.0
     gap = 0.5
@@ -55,7 +54,9 @@ def populate_palette_combo(combo, names, icon_size=30):
     for name in names:
         colors = PALETTES.get(name, CUSTOM_PREVIEW_COLORS)
         combo.addItem(palette_preview_icon(colors, icon_size), name)
-        combo.setItemData(combo.count() - 1, name, Qt.ToolTipRole)
+        combo.setItemData(
+            combo.count() - 1, name, Qt.ItemDataRole.ToolTipRole
+        )
     return combo
 
 
